@@ -13,6 +13,7 @@
  * - LOGBOOK FIX: Rhythmusanalyse triggert nun aktiv das Schlüsselwort "PAUSE" für den roten Logbuch-Balken.
  * - TIMING FIX: Timer und CCF starten erst physisch mit dem Klick auf "Kompression gestartet".
  * - CCF FIX: Die erste Rhythmusanalyse aus dem Onboarding pausiert nun ebenfalls korrekterweise die Kompression!
+ * - WORKFLOW FIX: Beutel-Maske überspringt das Doc-Fenster und zwingt den CPR-Modus sicher in 30:2 / 15:2.
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -739,11 +740,48 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         addClick('btn-airway', (e) => { e.stopPropagation(); navHelper('AIRWAY_MENU', 'view-airway', 'large'); });
+        
         addClick('view-airway', (e) => {
-            const isCancel = e.target.closest('#btn-airway-cancel'); const isRemove = e.target.closest('#btn-airway-remove'); const isEdit = e.target.closest('#btn-airway-edit-doc'); const isOpt = e.target.closest('.btn-airway-opt');
+            const isCancel = e.target.closest('#btn-airway-cancel'); 
+            const isRemove = e.target.closest('#btn-airway-remove'); 
+            const isEdit = e.target.closest('#btn-airway-edit-doc'); 
+            const isOpt = e.target.closest('.btn-airway-opt');
+            
             if (isOpt) {
-                e.stopPropagation(); Globals.tempAirwayType = isOpt.dataset.short; const docAwType = document.getElementById('doc-airway-type'); if (docAwType) docAwType.innerText = Globals.tempAirwayType;
-                if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
+                e.stopPropagation(); 
+                Globals.tempAirwayType = isOpt.dataset.short; 
+                
+                // 🌟 WORKFLOW FIX: Beutel-Maske überspringt das Doc-Menü und forciert den 30:2 / 15:2 Modus!
+                if (Globals.tempAirwayType === 'Beutel-Maske') {
+                    Utils.vibrate(30); markMenuAction();
+                    addLogEntry("Atemweg: Beutel-Maske");
+                    
+                    const awLabel = document.getElementById('airway-label'); 
+                    if(awLabel) awLabel.innerText = "Beutel-Maske";
+                    
+                    document.getElementById('btn-airway-remove')?.classList.remove('hidden'); 
+                    // Edit-Stift bei Beutel-Maske verstecken, da keine Tiefe/Cuff nötig
+                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden');
+                    
+                    AppState.airwayEstablished = true; 
+                    AppState.compressionCount = 0; // Kompressionen resetten, da Metronom neu startet
+                    
+                    // Modus hart auf 30:2 / 15:2 zwingen
+                    AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
+                    addLogEntry(`Modus: ${AppState.cprMode} (Auto-Switch)`); 
+                    if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI();
+                    
+                    navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
+                    
+                    if (AppState.state === 'RUNNING' && CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') CPR.CPRTimer.start(false); 
+                    updateCprUI();
+                    Utils.saveSession();
+                } else {
+                    // Standard-Verhalten für ETI, LTS, etc. -> Zeige das Detail-Fenster an (Tiefe, Cuff, Größe)
+                    const docAwType = document.getElementById('doc-airway-type'); 
+                    if (docAwType) docAwType.innerText = Globals.tempAirwayType;
+                    if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
+                }
             } else if (isCancel || isRemove) {
                 e.stopPropagation(); Utils.vibrate(30); markMenuAction(); 
                 if (isRemove) {
