@@ -1,6 +1,6 @@
 {
-  "name": "CPR Assist Beta",
-  "short_name": "CPR Assist Beta",
+  "name": "CPR Assist Update",
+  "short_name": "CPR Assist Update",
   "description": "Professioneller Reanimations-Assistent und Protokoll-Tool",
   "start_url": ".",
   "display": "standalone",
