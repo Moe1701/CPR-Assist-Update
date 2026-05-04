@@ -1,3 +1,8 @@
+/**
+ * CPR Assist - User Interface Controller
+ * Handhabt die Navigation zwischen den Views, dynamische UI-Updates und das Zeichnen der Canvas-Kreise.
+ */
+
 window.CPR = window.CPR || {};
 
 window.CPR.UI = (function() {
@@ -270,11 +275,14 @@ window.CPR.UI = (function() {
             }
 
             if (awContainer) {
+                // 🌟 BEUTEL-MASKE UPDATE: col-span-2 w-full Button elegant ins Grid integriert!
+                const modeText = isPedi ? "15:2 Modus" : "30:2 Modus";
                 awContainer.innerHTML = 
                     '<button class="btn-airway-opt flex-1 bg-cyan-50 border border-cyan-200 text-cyan-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95" data-short="ETI">ETI<br><span class="text-[8px] font-bold opacity-70">Intubation</span></button>' +
                     '<button class="btn-airway-opt flex-1 bg-cyan-50 border border-cyan-200 text-cyan-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95" data-short="i-gel">i-gel<br><span class="text-[8px] font-bold opacity-70">SGA</span></button>' +
                     '<button class="btn-airway-opt flex-1 bg-cyan-50 border border-cyan-200 text-cyan-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95" data-short="LAMA">LAMA<br><span class="text-[8px] font-bold opacity-70">Larynxmaske</span></button>' +
-                    '<button class="btn-airway-opt flex-1 bg-cyan-50 border border-cyan-200 text-cyan-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95" data-short="LTS">LTS<br><span class="text-[8px] font-bold opacity-70">Larynxtubus</span></button>';
+                    '<button class="btn-airway-opt flex-1 bg-cyan-50 border border-cyan-200 text-cyan-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95" data-short="LTS">LTS<br><span class="text-[8px] font-bold opacity-70">Larynxtubus</span></button>' +
+                    '<button class="btn-airway-opt col-span-2 w-full mt-2 bg-indigo-50 border border-indigo-200 text-indigo-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95 transition-all" data-short="Beutel-Maske">Beutel-Maske<br><span class="text-[8px] font-bold opacity-70">' + modeText + '</span></button>';
             }
 
             this.updateSmartMedsButton();
