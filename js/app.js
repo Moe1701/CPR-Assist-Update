@@ -12,6 +12,7 @@
  * - OVERLAP FIX: Redundanter "Jetzt hier drücken" Text entfernt für saubereres Layout im kleinen Button.
  * - LOGBOOK FIX: Rhythmusanalyse triggert nun aktiv das Schlüsselwort "PAUSE" für den roten Logbuch-Balken.
  * - TIMING FIX: Timer und CCF starten erst physisch mit dem Klick auf "Kompression gestartet".
+ * - CCF FIX: Die erste Rhythmusanalyse aus dem Onboarding pausiert nun ebenfalls korrekterweise die Kompression!
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -592,7 +593,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 navHelper('OB_ANALYZE', 'view-ob-3', 'large'); 
             } else if (AppState.state === 'OB_ANALYZE') { 
-                Utils.vibrate(50); navHelper('DECISION', 'view-decision', 'large'); 
+                Utils.vibrate([30, 50]); 
+                // 🌟 CCF FIX: Die allererste Rhythmusanalyse nach dem Start pausiert nun auch die CPR!
+                AppState.isCompressing = false; 
+                addLogEntry("Rhythmusanalyse (Kompression PAUSE)"); 
+                updateCprUI(); // Stoppt Metronom
+                navHelper('DECISION', 'view-decision', 'large'); 
             } else if (AppState.state === 'WAITING_CPR_RESUME') {
                 Utils.vibrate([40, 40]);
                 AppState.isCompressing = true;
@@ -603,10 +609,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (AppState.state === 'RUNNING') {
                 Utils.vibrate([30, 50]); 
                 AppState.isCompressing = false; 
-                
-                // 🌟 LOGBOOK FIX: Bewusstes Auslösen des roten Zeitbalkens
                 addLogEntry("Rhythmusanalyse (Kompression PAUSE)"); 
-                
                 navHelper('DECISION', 'view-decision', 'large'); 
                 if (CPR.CPRTimer && typeof CPR.CPRTimer.pause === 'function') CPR.CPRTimer.pause(); 
                 updateCprUI(); 
@@ -615,7 +618,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         addClick('btn-decision-cancel', (e) => {
             e.stopPropagation(); Utils.vibrate(30); markMenuAction();
-            if (AppState.previousState === 'RUNNING') { navHelper('RUNNING', 'view-timer', 'small'); if (CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') CPR.CPRTimer.start(true); updateCprUI(); } 
+            if (AppState.previousState === 'RUNNING' || AppState.previousState === 'OB_ANALYZE') { 
+                // 🌟 BUGFIX: Abbruch im Schock-Menü -> Zurück zum vorherigen Zustand und Timer weiterlaufen lassen!
+                AppState.isCompressing = true; 
+                addLogEntry("Analyse abgebrochen - CPR FORTGESETZT"); 
+                if (AppState.previousState === 'RUNNING') {
+                    activateDashboard(false); // Timer NICHT resetten, sondern weiterlaufen lassen
+                } else {
+                    navHelper('OB_ANALYZE', 'view-ob-3', 'large');
+                }
+                updateCprUI(); 
+                Utils.saveSession();
+            } 
             else { navHelper('OB_ANALYZE', 'view-ob-3', 'large'); }
         });
 
@@ -639,7 +653,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 const jL = document.getElementById('rhythm-info-joule'); if(jL) jL.innerText = jBtn.dataset.joule;
                 addLogEntry(`Schock abgegeben: ${jBtn.dataset.joule}`); navHelper('WAITING_CPR_RESUME', 'view-cpr-resume', 'large'); 
             }
-            if (e.target.id === 'btn-joule-cancel') { e.stopPropagation(); markMenuAction(); navHelper('DECISION', 'view-decision', 'large'); }
+            if (e.target.id === 'btn-joule-cancel') { 
+                e.stopPropagation(); markMenuAction(); 
+                // 🌟 BUGFIX: Auch wenn man im Joule-Menü abbricht, muss die CPR fortgesetzt werden!
+                if (AppState.previousState === 'RUNNING') {
+                    AppState.isCompressing = true;
+                    addLogEntry("Schock abgebrochen - CPR FORTGESETZT");
+                    activateDashboard(false);
+                    updateCprUI();
+                    Utils.saveSession();
+                } else {
+                    navHelper('DECISION', 'view-decision', 'large'); 
+                }
+            }
         });
 
         addClick('btn-confirm-resume', (e) => { 
