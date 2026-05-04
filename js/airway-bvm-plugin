@@ -1,0 +1,123 @@
+/**
+ * CPR Assist - Beutel-Maske Plugin (Medical Grade Open-Closed Principle)
+ * Kapselt die Beutel-Masken Logik vollständig ab, ohne core-Dateien zu berühren.
+ * Nutzt Event-Capturing und Monkey-Patching für eine nahtlose Integration.
+ */
+
+(function() {
+    // ========================================================
+    // 1. MONKEY PATCHING: Injektion des UI-Buttons
+    // ========================================================
+    function injectBVMButton() {
+        const CPR = window.CPR;
+        if (!CPR || !CPR.AppState) return;
+
+        // Suche den Container anhand eines existierenden Atemwegs-Buttons
+        const existingOpt = document.querySelector('.btn-airway-opt');
+        if (!existingOpt) return;
+
+        const grid = existingOpt.parentElement;
+        
+        // Prüfen, ob unser Button schon da ist. Wenn nicht -> Erstellen
+        let bvmBtn = grid.querySelector('[data-short="Beutel-Maske"]');
+        if (!bvmBtn) {
+            bvmBtn = document.createElement('button');
+            // col-span-2 für Grid, w-full für Flex. Deckt beide Layout-Arten ab!
+            bvmBtn.className = "btn-airway-opt col-span-2 w-full mt-2 bg-indigo-50 border border-indigo-200 text-indigo-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95 transition-all";
+            bvmBtn.dataset.short = "Beutel-Maske";
+            grid.appendChild(bvmBtn);
+        }
+        
+        // Text dynamisch aktualisieren (Erwachsener 30:2 vs. Kind 15:2)
+        const modeText = CPR.AppState.isPediatric ? "15:2 Modus" : "30:2 Modus";
+        bvmBtn.innerHTML = `Beutel-Maske<br><span class="text-[8px] font-bold opacity-70">${modeText}</span>`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // Initiale Injektion
+        setTimeout(injectBVMButton, 500); 
+
+        // Heimlich an UI-Aktualisierungen anhängen, um den Button immer am Leben zu halten
+        if (window.CPR && window.CPR.UI) {
+            if (window.CPR.UI.switchView) {
+                const origSwitch = window.CPR.UI.switchView;
+                window.CPR.UI.switchView = function(viewId) {
+                    origSwitch.apply(this, arguments);
+                    if (viewId === 'view-airway' || viewId === 'AIRWAY_MENU') injectBVMButton();
+                };
+            }
+            if (window.CPR.UI.updatePediatricUI) {
+                const origPedi = window.CPR.UI.updatePediatricUI;
+                window.CPR.UI.updatePediatricUI = function() {
+                    origPedi.apply(this, arguments);
+                    injectBVMButton();
+                };
+            }
+        }
+    });
+
+    // ========================================================
+    // 2. EVENT CAPTURING: Logik vor der app.js abfangen
+    // ========================================================
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-airway-opt[data-short="Beutel-Maske"]');
+        if (btn) {
+            // STOPP! Vernichtet das Event. Die app.js wird es niemals sehen.
+            e.stopPropagation();
+            e.preventDefault();
+
+            const CPR = window.CPR;
+            if (!CPR) return;
+
+            const { AppState, Globals, Utils, UI, navHelper, updateCprUI, CPRTimer } = CPR;
+
+            // Haptik & State
+            if (Utils && Utils.vibrate) Utils.vibrate(30);
+            if (Globals) {
+                Globals.lastMenuAction = Date.now();
+                Globals.tempAirwayType = 'Beutel-Maske';
+            }
+
+            // Logging & UI Updates
+            if (window.addLogEntry) window.addLogEntry("Atemweg: Beutel-Maske");
+
+            const awLabel = document.getElementById('airway-label'); 
+            if (awLabel) awLabel.innerText = "Beutel-Maske";
+
+            const btnRemove = document.getElementById('btn-airway-remove');
+            if (btnRemove) btnRemove.classList.remove('hidden');
+
+            // Den Doku-Stift explizit verstecken (keine Tiefe/Cuff bei BVM)
+            const btnEdit = document.getElementById('btn-airway-edit-doc');
+            if (btnEdit) btnEdit.classList.add('hidden');
+
+            // Timer-Logik erzwingen
+            if (AppState) {
+                AppState.airwayEstablished = true; 
+                AppState.compressionCount = 0; // Kompressionen resetten, da Metronom neu startet
+                AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
+                if (window.addLogEntry) window.addLogEntry(`Modus: ${AppState.cprMode} (Auto-Switch)`); 
+            }
+
+            if (UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI();
+
+            // Rückkehr zum Dashboard
+            if (typeof navHelper === 'function' && AppState) {
+                navHelper(
+                    AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', 
+                    AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', 
+                    AppState.previousState === 'RUNNING' ? 'small' : 'large'
+                );
+            }
+
+            // Metronom & Zyklus wieder aufnehmen (ohne Reset)
+            if (AppState && AppState.state === 'RUNNING' && CPRTimer && typeof CPRTimer.start === 'function') {
+                CPRTimer.start(false); 
+            }
+            
+            if (typeof updateCprUI === 'function') updateCprUI();
+            if (Utils && typeof Utils.saveSession === 'function') Utils.saveSession();
+        }
+    }, true); // <-- Das 'true' aktiviert die CAPTURE-PHASE!
+
+})();
