@@ -1,5 +1,5 @@
-// Version v36 - Caching Fehler (Icons) behoben
-const CACHE_NAME = 'cpr-assist-v61';
+// Version v37 - Neues Plug-In für Beutel-Maske hinzugefügt
+const CACHE_NAME = 'cpr-assist-v62';
 
 // Exakte Pfade mit Beachtung von Unterordnern und Dateiendungen!
 const ASSETS_TO_CACHE = [
@@ -18,6 +18,8 @@ const ASSETS_TO_CACHE = [
   './js/cpr-timer.js',
   './js/help-overlay.js',
   './js/debriefing.js',
+  './js/log-timeline.js',
+  './js/airway-bvm-plugin.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
@@ -26,7 +28,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Caching App Shell v33');
+      console.log('[Service Worker] Caching App Shell v62');
       return cache.addAll(ASSETS_TO_CACHE).catch(err => console.log('Caching Fehler:', err));
     })
   );
