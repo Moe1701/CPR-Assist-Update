@@ -106,6 +106,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.body.classList.add('center-menu-open');
             }
         }
+
+        // 🌟 NEU: Atemweg & CPR-Button ab "Kompression gestartet" sanft einblenden
+        if (newState === 'OB_COMPRESSIONS' || newState === 'OB_ANALYZE') {
+            ['btn-airway', 'btn-cpr'].forEach(id => { 
+                const el = document.getElementById(id); 
+                if (el) el.classList.remove('opacity-0', 'pointer-events-none'); 
+            });
+        }
     }
     window.CPR.navHelper = navHelper;
 
