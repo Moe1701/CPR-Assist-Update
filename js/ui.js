@@ -1,8 +1,3 @@
-/**
- * CPR Assist - User Interface Controller
- * Handhabt die Navigation zwischen den Views, dynamische UI-Updates und das Zeichnen der Canvas-Kreise.
- */
-
 window.CPR = window.CPR || {};
 
 window.CPR.UI = (function() {
@@ -68,9 +63,6 @@ window.CPR.UI = (function() {
             if (hPanel) hPanel.classList.add('translate-y-full');
         },
 
-        // 🌟 DIE WAHRE LÖSUNG: CSS-Delegation statt JS-Timeouts 🌟
-        // Die Funktion updateOrbitGeometry (die Zeitbombe) wurde restlos gelöscht.
-        // Das Layout wird nun fehlerfrei von Abschnitt 6 & 9 deiner style.css gesteuert!
         setCenterSize: function(size) {
             if (size === 'small') {
                 document.body.classList.add('cpr-mode-small');
@@ -275,7 +267,7 @@ window.CPR.UI = (function() {
             }
 
             if (awContainer) {
-                // 🌟 BEUTEL-MASKE UPDATE: col-span-2 w-full Button elegant ins Grid integriert!
+                // 🌟 BEUTEL-MASKE INJEKTION: Nutzt col-span-2 für einen breiten Abschlussbutton!
                 const modeText = isPedi ? "15:2 Modus" : "30:2 Modus";
                 awContainer.innerHTML = 
                     '<button class="btn-airway-opt flex-1 bg-cyan-50 border border-cyan-200 text-cyan-700 py-3 rounded-xl font-black text-xs shadow-sm active:scale-95" data-short="ETI">ETI<br><span class="text-[8px] font-bold opacity-70">Intubation</span></button>' +
