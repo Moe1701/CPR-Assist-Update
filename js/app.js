@@ -11,6 +11,7 @@
  * - TIME TRAVEL FIX: CPR und CCF-Berechnung laufen während App-Backgrounding lückenlos weiter.
  * - OVERLAP FIX: Redundanter "Jetzt hier drücken" Text entfernt für saubereres Layout im kleinen Button.
  * - LOGBOOK FIX: Rhythmusanalyse triggert nun aktiv das Schlüsselwort "PAUSE" für den roten Logbuch-Balken.
+ * - TIMING FIX: Timer und CCF starten erst physisch mit dem Klick auf "Kompression gestartet".
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -532,27 +533,39 @@ document.addEventListener('DOMContentLoaded', function() {
 
         addClick('btn-start-adult', () => {
             if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = false; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
+            Utils.vibrate(40); AppState.isPediatric = false; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; 
+            
+            // 🌟 DEFER: Kompression und Timer laufen noch NICHT!
+            AppState.isRunning = false; AppState.isCompressing = false;
+            
             if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            startMainTimer(); requestWakeLock(); addLogEntry("Start REA Erw."); navHelper('OB_COMPRESSIONS', 'view-ob-2', 'large'); updateCprUI();
+            addLogEntry("Patient: Erwachsener"); navHelper('OB_COMPRESSIONS', 'view-ob-2', 'large'); Utils.saveSession();
         });
 
         addClick('btn-start-child', (e) => { e.stopPropagation(); Utils.vibrate(40); if (sKg && parseInt(sKg.value) === 4) sync('kg'); const m = document.getElementById('patient-setup-modal'); if(m) m.classList.replace('hidden', 'flex'); });
 
         addClick('btn-start-pediatric', () => {
             if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = parseFloat(sKg.value); AppState.cprMode = 'continuous'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
+            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = parseFloat(sKg.value); AppState.cprMode = 'continuous'; AppState.compressionCount = 0; 
+            
+            // 🌟 DEFER: Kompression und Timer laufen noch NICHT!
+            AppState.isRunning = false; AppState.isCompressing = false;
+            
             document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden');
             if(UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            startMainTimer(); requestWakeLock(); addLogEntry(`Start REA Kind (${AppState.patientWeight}kg)`); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); updateCprUI(); Utils.saveSession();
+            addLogEntry(`Patient: Kind (${AppState.patientWeight}kg)`); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); Utils.saveSession();
         });
 
         addClick('btn-start-pediatric-unknown', () => {
             if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
+            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; 
+            
+            // 🌟 DEFER: Kompression und Timer laufen noch NICHT!
+            AppState.isRunning = false; AppState.isCompressing = false;
+            
             document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden');
             if(UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            startMainTimer(); requestWakeLock(); addLogEntry("Start REA Kind (Gewicht unbekannt)"); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); updateCprUI(); Utils.saveSession();
+            addLogEntry("Patient: Kind (Gewicht unbekannt)"); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); Utils.saveSession();
         });
     }
 
@@ -566,8 +579,17 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (AppState.state === 'OB_COMPRESSIONS') { 
                 Utils.vibrate(50); 
-                AppState.cprMode = 'continuous'; // 🌟 Sicherheits-Forcierung auf KONT nach Bestätigung
+                AppState.cprMode = 'continuous'; // Sicherheits-Forcierung auf KONT nach Bestätigung
                 if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI();
+                
+                // 🌟 NEU: HIER startet der Countdown und die Kompressionsphase wirklich!
+                AppState.isRunning = true;
+                AppState.isCompressing = true;
+                startMainTimer();
+                requestWakeLock();
+                addLogEntry("Start REA (Kompression begonnen)");
+                updateCprUI();
+                
                 navHelper('OB_ANALYZE', 'view-ob-3', 'large'); 
             } else if (AppState.state === 'OB_ANALYZE') { 
                 Utils.vibrate(50); navHelper('DECISION', 'view-decision', 'large'); 
