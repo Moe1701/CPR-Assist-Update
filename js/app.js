@@ -532,7 +532,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         addClick('btn-start-adult', () => {
             if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = false; AppState.patientWeight = null; AppState.cprMode = '30:2'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
+            Utils.vibrate(40); AppState.isPediatric = false; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
             if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
             startMainTimer(); requestWakeLock(); addLogEntry("Start REA Erw."); navHelper('OB_COMPRESSIONS', 'view-ob-2', 'large'); updateCprUI();
         });
@@ -541,7 +541,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         addClick('btn-start-pediatric', () => {
             if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = parseFloat(sKg.value); AppState.cprMode = '15:2'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
+            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = parseFloat(sKg.value); AppState.cprMode = 'continuous'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
             document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden');
             if(UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
             startMainTimer(); requestWakeLock(); addLogEntry(`Start REA Kind (${AppState.patientWeight}kg)`); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); updateCprUI(); Utils.saveSession();
@@ -549,7 +549,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         addClick('btn-start-pediatric-unknown', () => {
             if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = null; AppState.cprMode = '15:2'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
+            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; AppState.isRunning = true; AppState.isCompressing = true;
             document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden');
             if(UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
             startMainTimer(); requestWakeLock(); addLogEntry("Start REA Kind (Gewicht unbekannt)"); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); updateCprUI(); Utils.saveSession();
@@ -565,7 +565,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (Date.now() - (Globals.lastMenuAction || 0) < 500) return;
             
             if (AppState.state === 'OB_COMPRESSIONS') { 
-                Utils.vibrate(50); navHelper('OB_ANALYZE', 'view-ob-3', 'large'); 
+                Utils.vibrate(50); 
+                AppState.cprMode = 'continuous'; // 🌟 Sicherheits-Forcierung auf KONT nach Bestätigung
+                if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI();
+                navHelper('OB_ANALYZE', 'view-ob-3', 'large'); 
             } else if (AppState.state === 'OB_ANALYZE') { 
                 Utils.vibrate(50); navHelper('DECISION', 'view-decision', 'large'); 
             } else if (AppState.state === 'WAITING_CPR_RESUME') {
