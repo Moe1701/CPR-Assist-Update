@@ -1,0 +1,215 @@
+/* ==========================================
+   1. GRUNDEINSTELLUNGEN & RESET
+   ========================================== */
+* { -webkit-tap-highlight-color: transparent; }
+body { overscroll-behavior-y: none; background-color: #f8fafc; }
+.no-select { user-select: none; -webkit-user-select: none; }
+
+/* ==========================================
+   2. SCROLLBAR
+   ========================================== */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+/* ==========================================
+   3. RESPONSIVES KREIS-MENÜ (Variablen)
+   ========================================== */
+:root {
+    /* MOBILE FIRST (Handys) - SAFE FIBONACCI (Anti-Scroll) */
+    --sat-size: 76px;
+    --orbit-radius: 160px;   /* 112px (Zentrum) + 10px (Gap) + 38px (Sat) */
+    --main-size: 85px;
+    --main-x: 125px;         /* Mehr zur Seite geschoben... */
+    --main-y: 255px;         /* ...damit Y sicher oben bleibt und nichts abschneidet! */
+    --center-btn-size: 224px;
+}
+
+@media (min-width: 768px) {
+    :root {
+        /* iPAD & TABLET - SAFE FIBONACCI */
+        --sat-size: 90px;
+        --orbit-radius: 177px;   /* 122px (Zentrum) + 10px (Gap) + 45px (Sat) */
+        --main-size: 100px;
+        --main-x: 140px;
+        --main-y: 290px;
+        --center-btn-size: 244px;
+    }
+}
+
+.orbit-path { 
+    position: absolute; top: 50%; left: 50%; 
+    transform: translate(-50%, -50%); 
+    border: 2px dashed #e2e8f0; 
+    border-radius: 50%; z-index: 10; pointer-events: none; 
+}
+
+.satellite-btn { 
+    width: var(--sat-size) !important; 
+    height: var(--sat-size) !important; 
+    margin: 0 !important; 
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    display: flex !important; 
+    flex-direction: column !important; 
+    align-items: center !important; 
+    justify-content: center !important; 
+    z-index: 45 !important; 
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.1s ease, filter 0.1s ease !important; 
+}
+
+/* WICHTIG: Wenn versteckt, dann absolut unsichtbar im Layout! */
+.hidden { 
+    display: none !important; 
+}
+
+#btn-adrenalin     { transform: translate(-50%, -50%) rotate(270deg) translate(var(--orbit-radius)) rotate(-270deg) !important; }
+#btn-meds-menu     { transform: translate(-50%, -50%) rotate(330deg) translate(var(--orbit-radius)) rotate(-330deg) !important; }
+#btn-toggle-hits   { transform: translate(-50%, -50%) rotate(30deg) translate(var(--orbit-radius)) rotate(-30deg) !important; }
+#btn-rosc-end      { transform: translate(-50%, -50%) rotate(90deg) translate(var(--orbit-radius)) rotate(-90deg) !important; }
+#btn-toggle-protocol { transform: translate(-50%, -50%) rotate(150deg) translate(var(--orbit-radius)) rotate(-150deg) !important; }
+#btn-zugang-menu   { transform: translate(-50%, -50%) rotate(210deg) translate(var(--orbit-radius)) rotate(-210deg) !important; }
+
+#btn-airway, #btn-cpr { 
+    position: absolute !important; top: 50% !important; left: 50% !important; 
+    width: var(--main-size) !important; height: var(--main-size) !important; 
+    margin: 0 !important; border-radius: 9999px !important; z-index: 50 !important; 
+    transition: transform 0.1s ease, opacity 0.4s ease-out, filter 0.1s ease !important; 
+}
+#btn-airway { transform: translate(calc(-50% - var(--main-x)), calc(-50% + var(--main-y))) !important; }
+#btn-cpr    { transform: translate(calc(-50% + var(--main-x)), calc(-50% + var(--main-y))) !important; }
+
+#btn-adrenalin:active { transform: translate(-50%, -50%) rotate(270deg) translate(var(--orbit-radius)) rotate(-270deg) scale(0.95) !important; filter: brightness(0.9); }
+#btn-meds-menu:active { transform: translate(-50%, -50%) rotate(330deg) translate(var(--orbit-radius)) rotate(-330deg) scale(0.95) !important; filter: brightness(0.9); }
+#btn-toggle-hits:active { transform: translate(-50%, -50%) rotate(30deg) translate(var(--orbit-radius)) rotate(-30deg) scale(0.95) !important; filter: brightness(0.9); }
+#btn-rosc-end:active { transform: translate(-50%, -50%) rotate(90deg) translate(var(--orbit-radius)) rotate(-90deg) scale(0.95) !important; filter: brightness(0.9); }
+#btn-toggle-protocol:active { transform: translate(-50%, -50%) rotate(150deg) translate(var(--orbit-radius)) rotate(-150deg) scale(0.95) !important; filter: brightness(0.9); }
+#btn-zugang-menu:active { transform: translate(-50%, -50%) rotate(210deg) translate(var(--orbit-radius)) rotate(-210deg) scale(0.95) !important; filter: brightness(0.9); }
+#btn-airway:active { transform: translate(calc(-50% - var(--main-x)), calc(-50% + var(--main-y))) scale(0.95) !important; filter: brightness(0.9); }
+#btn-cpr:active    { transform: translate(calc(-50% + var(--main-x)), calc(-50% + var(--main-y))) scale(0.95) !important; filter: brightness(0.9); }
+
+/* ==========================================
+   4. ANIMATIONEN
+   ========================================== */
+.pause-warning { background-color: #fef2f2 !important; border-color: #ef4444 !important; animation: borderPulseFast 1s infinite; }
+.timer-ended { animation: borderPulse 1s infinite; }
+@keyframes borderPulse { 0%, 100% { border-color: #fef2f2; } 50% { border-color: #fca5a5; } }
+@keyframes borderPulseFast { 0%, 100% { border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); } 50% { border-color: #fca5a5; box-shadow: 0 0 5px rgba(239, 68, 68, 0.1); } }
+
+/* ==========================================
+   5. UI/UX DEBUG-MODUS 
+   ========================================== */
+body.debug-mode .satellite-btn, body.debug-mode #btn-airway, body.debug-mode #btn-cpr { outline: 2px solid rgba(0, 255, 0, 0.9) !important; background-color: rgba(0, 255, 0, 0.15) !important; }
+body.debug-mode #main-btn-area { outline: 2px solid rgba(255, 0, 0, 0.9) !important; }
+body.debug-mode #orbit-wrapper > div::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: calc(var(--orbit-radius) * 2); height: calc(var(--orbit-radius) * 2); border: 3px dashed rgba(0, 100, 255, 0.9) !important; border-radius: 50%; pointer-events: none; z-index: 9999; }
+
+/* ==========================================
+   6. MASTER-ZENTRIERUNG & ARCHITEKTUR-LOGIK
+   ========================================== */
+#orbit-wrapper {
+    position: absolute !important; top: 0 !important; bottom: 0 !important; left: 0 !important; right: 0 !important; margin: 0 !important; padding: 0 !important;
+}
+
+#orbit-wrapper > div.relative {
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    /* GANZES DASHBOARD 20px TIEFER: Original war -65px -> Neu: -45px */
+    transform: translateY(-45px) !important; 
+}
+
+/* 🌟 DER MASTER-KREIS 🌟 */
+#main-btn-area {
+    background-color: #ffffff !important;
+    border-radius: 50% !important;
+    overflow: hidden !important; 
+    box-shadow: 0 10px 40px rgba(0,0,0,0.08) !important;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.1s ease, box-shadow 0.1s ease, filter 0.1s ease !important;
+}
+
+#main-btn-area:active {
+    transform: scale(0.97) !important; box-shadow: 0 2px 10px rgba(0,0,0,0.05) !important; filter: brightness(0.97) !important;
+}
+
+/* KREIS GROSS: Menüs (Decision, Joule etc.) sind offen */
+body.center-menu-open #orbit-wrapper > div.relative, 
+body.center-menu-open #main-btn-area {
+    width: 330px !important;
+    height: 330px !important;
+    z-index: 60 !important; 
+}
+@media (min-width: 768px) {
+    body.center-menu-open #orbit-wrapper > div.relative, 
+    body.center-menu-open #main-btn-area { width: 400px !important; height: 400px !important; }
+}
+
+/* KREIS KLEIN: CPR-Timer läuft */
+body.dashboard-active.cpr-mode-small #orbit-wrapper > div.relative,
+body.dashboard-active.cpr-mode-small #main-btn-area {
+    width: var(--center-btn-size) !important;
+    height: var(--center-btn-size) !important;
+    z-index: 55 !important;
+}
+body.dashboard-active.cpr-mode-small #orbit-wrapper > div.relative {
+    /* GANZES DASHBOARD 20px TIEFER: Original war -105px -> Neu: -85px */
+    transform: translateY(-85px) !important; 
+}
+
+/* ==========================================
+   7. STRIKTES TIMER-LAYOUT
+   ========================================== */
+.vt-top-text { position: absolute; top: 38px; left: 0; width: 100%; text-align: center; pointer-events: none; }
+.vt-top-text span { font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.8; transition: color 0.3s ease; }
+
+.vt-timer-display { position: absolute; top: 65px; left: 0; width: 100%; text-align: center; font-size: 72px; font-weight: 900; line-height: 1; color: #1e293b; letter-spacing: -0.05em; pointer-events: none; transition: color 0.3s ease; }
+
+.vt-alert-box { position: absolute; top: 145px; left: 0; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; z-index: 10; }
+.vt-alert-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.vt-alert-dot { width: 8px; height: 8px; border-radius: 50%; }
+.vt-alert-txt { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+.vt-alert-num { font-size: 32px; font-weight: 900; line-height: 1; }
+
+.vt-analyze-badge { padding: 4px 16px; background-color: #E3000F; border-radius: 9999px; box-shadow: 0 0 15px rgba(227,0,15,0.6); margin-bottom: 4px; }
+.vt-analyze-txt { font-size: 12px; font-weight: 800; color: white; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+.vt-analyze-sub { font-size: 10px; font-weight: 800; color: #E3000F; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+
+.vt-bottom-info { position: absolute; bottom: 25px; left: 0; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 800; color: #475569; pointer-events: none; }
+
+/* ==========================================
+   8. MENÜ-CONTAINER (SAUBER! Die harten Button-Hacks sind weg!)
+   ========================================== */
+#view-decision:not(.hidden), 
+#view-joule:not(.hidden), 
+#view-cpr-resume:not(.hidden),
+#view-meds-menu:not(.hidden), 
+#view-airway:not(.hidden), 
+#view-zugang:not(.hidden),
+#view-rosc-end:not(.hidden), 
+#view-abbruch-reason:not(.hidden), 
+#view-airway-doc:not(.hidden) {
+    position: absolute !important; 
+    inset: 0 !important; 
+    width: 100% !important; 
+    height: 100% !important;
+    background-color: #ffffff !important;
+    border-radius: 50% !important;
+    overflow: hidden !important; 
+}
+
+/* ==========================================
+   9. ARCHITEKTUR-FIX: SATELLITEN AUSBLENDEN
+   ========================================== */
+body.dashboard-active.center-menu-open .satellite-btn,
+body.dashboard-active.center-menu-open #btn-airway,
+body.dashboard-active.center-menu-open #btn-cpr {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transform: scale(0.5) !important;
+}
+
+/* ==========================================
+   10. SONSTIGES & OVERRIDES
+   ========================================== */
+.pointer-events-none { pointer-events: none !important; }
+.pointer-events-auto { pointer-events: auto !important; }
+.transition-colors { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 300ms; }

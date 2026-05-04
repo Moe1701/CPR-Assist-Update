@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CPR Assist</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#E3000F">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Externe Bibliotheken -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Die jsPDF Bibliothek für den Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <!-- Eigene CSS Datei (Mit CACHE-BUSTER v1001!) -->
+    <link rel="stylesheet" href="css/style.css?v=1001">
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans h-[100dvh] flex flex-col m-0 overflow-hidden no-select relative">
+
+    <div id="js-failsafe" class="hidden absolute inset-0 z-[999] bg-[#E3000F] text-white flex-col items-center justify-center text-center p-6">
+        <i class="fa-solid fa-triangle-exclamation text-6xl mb-4"></i>
+        <h1 class="text-2xl font-black uppercase mb-2">Ladefehler</h1>
+        <p class="font-bold text-sm mb-4">Die Code-Dateien wurden nicht gefunden!</p>
+        <p class="text-xs mt-2 opacity-90 max-w-sm">Lade die Seite auf dem Handy komplett neu (Cache leeren).</p>
+        <div id="error-log" class="mt-6 text-[10px] font-mono text-yellow-300"></div>
+    </div>
+
+    <!-- HEADER -->
+    <header class="flex items-center justify-between bg-white px-4 py-3 border-b border-slate-200 shadow-sm z-[70] relative shrink-0">
+        <div id="logo-container" class="flex items-center gap-3 p-1 select-none cursor-pointer">
+            <div class="w-10 h-10 flex items-center justify-center shrink-0 text-[#E3000F]">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg>
+            </div>
+            <div class="flex flex-col justify-center leading-none">
+                <span class="text-lg font-black text-slate-900 uppercase tracking-tight">CPR Assist</span>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">by Moe</span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="btn-help" class="text-slate-400 text-xl p-2 active:scale-90 transition-transform select-none"><i class="fa-solid fa-circle-question pointer-events-none"></i></button>
+            <button id="btn-toggle-sound" class="text-slate-400 text-xl p-2 active:scale-90 transition-transform">
+                <i id="icon-sound-on" class="fa-solid fa-volume-high pointer-events-none"></i>
+                <i id="icon-sound-off" class="fa-solid fa-volume-xmark hidden pointer-events-none"></i>
+            </button>
+            <button id="btn-settings" class="text-slate-600 text-xl p-2 active:scale-90 transition-transform ml-1"><i class="fa-solid fa-gear pointer-events-none"></i></button>
+        </div>
+    </header>
+
+    <!-- 🌟 LAYOUT ANCHOR: Verankert die Top-Stats UND den Disclaimer fix oben 🌟 -->
+    <div class="relative w-full shrink-0 z-[60]">
+        
+        <!-- DISCLAIMER -->
+        <div class="absolute top-4 left-0 right-0 w-full px-4 z-[65] pointer-events-none">
+            <div id="medical-disclaimer" class="w-full max-w-sm mx-auto bg-red-50/95 backdrop-blur-sm border-2 border-red-500 rounded-2xl p-3 shadow-sm text-center pointer-events-auto">
+                <h2 class="text-red-700 font-black uppercase tracking-widest text-xs mb-1"><i class="fa-solid fa-triangle-exclamation text-red-600 mr-1.5"></i>Wichtiger Hinweis</h2>
+                <p class="text-red-800 text-[10px] font-bold leading-tight">Assistenz- & Trainingswerkzeug für med. Fachpersonal. Ersetzt keine ärztliche Entscheidung. Alle Dosierungen sind eigenverantwortlich zu prüfen. Nutzung auf eigene Gefahr.</p>
+            </div>
+        </div>
+
+        <!-- TOP STATS -->
+        <div id="top-stats-container" class="opacity-0 pointer-events-none transition-opacity duration-300 w-full bg-slate-50 px-2 pt-2 pb-1 relative z-[40]">
+            <div id="top-stats" class="flex gap-2 w-full max-w-md mx-auto">
+                <div class="flex-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <div class="flex justify-between items-center border-b border-slate-50 pb-1 mb-1">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zeit</span>
+                        <span id="start-time" class="text-xs text-slate-500 font-bold tracking-wide">--:--</span>
+                    </div>
+                    <div id="main-timer" class="text-3xl sm:text-4xl font-mono font-black tracking-tight text-slate-800 mt-1">00:00</div>
+                </div>
+                <div id="stat-ccf" class="flex-[1.5] bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center transition-all overflow-hidden">
+                    <div class="flex flex-col items-start w-full">
+                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Patient/Modus</span>
+                        <div class="flex gap-1 flex-wrap items-center">
+                            <button id="btn-pediatric-edit" class="hidden text-[9px] bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded-full font-black uppercase flex items-center gap-1 active:scale-95 shadow-sm transition-all animate-pulse">
+                                <i class="fa-solid fa-weight-scale"></i> <span id="pediatric-weight-display">FEHLT!</span>
+                            </button>
+                            <div id="btn-toggle-mode" class="relative flex items-center bg-amber-100 rounded-full p-[2px] cursor-pointer w-[92px] h-[28px] shadow-inner select-none border border-amber-200 transition-colors duration-300 shrink-0">
+                                <div id="mode-slider-thumb" class="absolute left-[2px] top-[2px] w-[43px] h-[22px] bg-white rounded-full shadow-sm transition-transform duration-300 border border-amber-200 z-0 translate-x-0"></div>
+                                <div id="mode-label-sync" class="flex-1 text-center text-[10px] font-black z-10 transition-colors duration-300 text-amber-700">30:2</div>
+                                <div id="mode-label-kont" class="flex-1 text-center text-[10px] font-black z-10 transition-colors duration-300 text-amber-400">KONT</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end shrink-0 pl-2 border-l border-slate-100 min-w-[50px]">
+                        <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">CCF</span>
+                        <div id="ccf-display" class="text-2xl sm:text-3xl font-black text-slate-300 tracking-tight leading-none">--%</div>
+                    </div>
+                </div>
+                <div id="stat-rosc" class="hidden flex-[1.5] bg-emerald-100 p-2.5 rounded-xl border border-emerald-300 shadow-sm justify-between items-center transition-all">
+                    <div class="flex flex-col items-start">
+                        <span class="text-[9px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-1"><i class="fa-solid fa-heart-pulse"></i> Stabilisierung</span>
+                    </div>
+                    <div id="rosc-timer-display" class="text-2xl sm:text-3xl font-mono font-black tracking-tight text-emerald-800 leading-none mt-1">00:00</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CPR INTERFACE (Mathematisch auf den Grid-Nullpunkt zentriert) -->
+    <main id="cpr-interface" class="flex-1 relative z-20 w-full">
+        
+        <div id="orbit-wrapper" class="absolute inset-0 flex items-center justify-center pointer-events-none z-[55]">
+            <div class="relative flex items-center justify-center">
+                
+                <div id="satellites" class="contents hidden">
+                    
+                    <button id="btn-adrenalin" class="satellite-btn pointer-events-auto bg-white border-2 border-red-100 rounded-full shadow-lg text-slate-500 relative" data-dose="1 mg">
+                        <canvas id="adr-progress-circle" width="100" height="100" class="absolute inset-0 w-full h-full pointer-events-none z-10" style="transform: rotate(-90deg); opacity: 0; transition: opacity 0.2s;"></canvas>
+                        <div id="adr-inner" class="flex flex-col items-center justify-center w-full h-full pointer-events-none absolute inset-0 z-20" style="opacity: 1; transition: opacity 0.2s;">
+                            <i id="adr-icon" class="fa-solid fa-syringe text-[24px] mb-0.5 text-slate-400 transition-colors"></i>
+                            <span id="adr-text-2" class="text-[12px] font-extrabold tracking-wide mt-1 text-slate-700 leading-tight whitespace-nowrap">1 mg</span>
+                        </div>
+                        <div id="adr-timer" class="absolute inset-0 items-center justify-center text-xl font-black text-slate-700 tracking-tighter pointer-events-none z-30 rounded-full bg-white/60 backdrop-blur-[1px] drop-shadow-sm" style="display: none;">04:00</div>
+                        <div id="adr-count-badge" class="absolute -top-2 -right-2 bg-[#E3000F] text-white text-[12px] font-black px-2 min-w-[26px] h-7 items-center justify-center rounded-full shadow-md border-2 border-white z-40" style="display: none;"></div>
+                    </button>
+                    
+                    <button id="btn-meds-menu" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-purple-100 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <i class="fa-solid fa-capsules text-[24px] mb-1 text-slate-400"></i>
+                            <div class="flex flex-col items-center leading-none mt-0.5 w-full px-1">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meds</span>
+                                <span class="text-[11px] font-black text-purple-700 uppercase tracking-tight mt-0.5">Amio.</span>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-toggle-hits" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-slate-200 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <span class="text-[16px] font-black uppercase tracking-[0.1em] leading-none mb-1 text-slate-600">HITS</span>
+                            <span class="text-[9px] font-semibold uppercase tracking-[0.15em] text-slate-400">Anamnese</span>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-rosc-end" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-slate-200 rounded-full shadow-lg text-slate-600">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <i class="fa-solid fa-flag-checkered text-[24px] mb-1 text-slate-400"></i>
+                            <span class="text-[12px] font-black leading-tight uppercase mt-1 text-slate-700 pointer-events-none text-center">Ende<br>ROSC</span>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-toggle-protocol" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-slate-200 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-1 text-slate-400"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1 2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14h6"></path><path d="M9 18h6"></path><path d="M9 10h6"></path></svg>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mt-1">Log</span>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-zugang-menu" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-indigo-100 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <i class="fa-solid fa-droplet text-[24px] mb-1 text-slate-400"></i>
+                            <span id="zugang-label" class="text-[12px] font-extrabold uppercase tracking-wide mt-1 whitespace-nowrap">Zugang</span>
+                        </div>
+                    </button>
+                </div>
+                
+                <button id="btn-airway" class="pointer-events-auto opacity-0 bg-white border-2 border-cyan-100 flex flex-col items-center justify-center text-slate-500 relative select-none shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+                    <div id="aw-glow-bg" class="absolute inset-0 w-full h-full bg-cyan-300 opacity-0 pointer-events-none rounded-full transition-opacity duration-150"></div>
+                    <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                        <i id="aw-icon" class="fa-solid fa-lungs text-[32px] mb-1 text-slate-400"></i>
+                        <span id="airway-label" class="text-[12px] font-extrabold uppercase tracking-wide mt-1 whitespace-nowrap">Atemweg</span>
+                    </div>
+                    <span id="airway-countdown-badge" class="hidden absolute -top-2 -right-2 bg-slate-800 text-white text-[12px] font-black px-2 min-w-[26px] h-7 flex items-center justify-center rounded-full shadow-md border-2 border-white z-30 transition-colors"></span>
+                </button>
+                
+                <button id="btn-cpr" data-state="bereit" class="pointer-events-auto opacity-0 bg-white border-4 border-slate-100 flex flex-col items-center justify-center text-slate-500 relative select-none shadow-[0_8px_30px_rgb(0,0,0,0.1)]">
+                    <span id="cpr-counter-badge" class="hidden absolute -top-2 -right-2 text-white font-medium px-2 min-w-[24px] h-6 flex items-center justify-center rounded-full shadow-sm border border-white/50 z-30 bg-slate-700/85 backdrop-blur-sm text-[11px] transition-all">0</span>
+                    <span id="cpr-hands-off-timer" class="hidden absolute -bottom-3 left-1/2 -translate-x-1/2 bg-slate-700/85 backdrop-blur-sm text-white text-[10px] font-medium px-3 py-1 rounded-full shadow-sm border border-white/50 z-30 whitespace-nowrap tracking-widest transition-all duration-300">0s Pause</span>
+                    
+                    <i id="cpr-icon-normal" class="fa-solid fa-play text-3xl mb-1 pointer-events-none text-emerald-500 transition-all duration-300"></i>
+                    <i id="cpr-icon-pause" class="fa-solid fa-pause text-3xl hidden mb-1 pointer-events-none text-slate-400 transition-all duration-300"></i>
+                    <i id="cpr-icon-vent" class="fa-solid fa-lungs text-3xl hidden mb-1 pointer-events-none text-cyan-600 transition-all duration-300"></i>
+                    
+                    <span id="cpr-main-text" class="text-[12px] font-bold tracking-wide uppercase pointer-events-none whitespace-nowrap mt-1 text-slate-600 transition-colors">CPR START</span>
+                </button>
+                
+                <!-- 🌟 ZENTRALER KREIS (Das Master Layout) 🌟 -->
+                <div id="main-btn-area" style="width: 330px; height: 330px;" class="rounded-full bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] cursor-pointer z-30 transition-all duration-500 overflow-hidden relative pointer-events-auto flex items-center justify-center">
+                    
+                    <canvas id="progress-circle" width="330" height="330" class="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-500 z-10 opacity-0" style="transform: rotate(-90deg);"></canvas>
+                    
+                    <!-- 🌟 ROLLE RÜCKWÄRTS: ONBOARDING WIEDER 100% STABIL (Absolute Positionierung) 🌟 -->
+                    <div id="view-ob-1" class="absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none drop-shadow-sm">Patient wählen</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <button id="btn-start-adult" class="w-[85%] max-w-[300px] h-[60px] bg-white text-slate-700 rounded-full font-black uppercase tracking-[0.2em] text-[15px] shadow-[0_8px_25px_rgba(0,0,0,0.04)] border border-slate-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-4 hover:shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+                                <i class="fa-solid fa-person text-3xl text-slate-400 pointer-events-none"></i> 
+                                <span class="pointer-events-none">Erwachsener</span>
+                            </button>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center">
+                            <button id="btn-start-child" class="w-[85%] max-w-[300px] h-[60px] bg-indigo-50/80 text-indigo-700 rounded-full font-black uppercase tracking-[0.2em] text-[15px] shadow-[0_8px_25px_rgba(79,70,229,0.05)] border border-indigo-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-4 hover:shadow-[0_10px_30px_rgba(79,70,229,0.09)]">
+                                <i class="fa-solid fa-child text-3xl text-indigo-400 pointer-events-none"></i> 
+                                <span class="pointer-events-none">Kind</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- INIT BEATMUNGEN -->
+                    <div id="view-initial-breaths" class="hidden absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[25px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none text-center leading-tight drop-shadow-sm">5 Initiale<br>Beatmungen</span>
+                        </div>
+                        <div class="absolute top-[75px] w-full flex justify-center pointer-events-none">
+                            <div class="w-12 h-12 bg-cyan-50 border border-cyan-100 text-cyan-600 rounded-full flex items-center justify-center shadow-sm"><i class="fa-solid fa-lungs text-xl"></i></div>
+                        </div>
+                        <div class="absolute top-[135px] w-full flex justify-center pointer-events-auto">
+                            <button id="btn-breaths-done" class="w-[85%] max-w-[300px] h-[60px] bg-cyan-50/80 text-cyan-700 rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(6,182,212,0.04)] border border-cyan-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_10px_30px_rgba(6,182,212,0.08)]">
+                                <i class="fa-solid fa-lungs text-2xl text-cyan-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Durchgeführt</span>
+                            </button>
+                        </div>
+                        <div class="absolute top-[205px] w-full flex justify-center">
+                            <button id="btn-breaths-skipped" class="w-[85%] max-w-[300px] h-[60px] bg-white text-slate-400 rounded-full font-bold uppercase tracking-[0.25em] text-[13px] shadow-[0_5px_15px_rgba(0,0,0,0.03)] border border-slate-100 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)]">
+                                <span class="pointer-events-none">Überspringen</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- CPR START -->
+                    <div id="view-ob-2" class="hidden absolute inset-0 w-full h-full z-20 pointer-events-none bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none text-center leading-tight drop-shadow-sm">Kompression<br>gestartet?</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <div id="ob-timer-display" class="text-[56px] font-mono font-black text-slate-700 tracking-tighter leading-none">00:00</div>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center pointer-events-auto">
+                            <span id="btn-confirm-cpr" class="w-[85%] max-w-[300px] h-[60px] bg-red-50 text-[#E3000F] rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(227,0,15,0.05)] border border-red-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 animate-pulse cursor-pointer hover:shadow-[0_10px_30px_rgba(227,0,15,0.08)]">
+                                <i class="fa-solid fa-check-double text-2xl text-red-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Bestätigen</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- ANALYSE -->
+                    <div id="view-ob-3" class="hidden absolute inset-0 w-full h-full z-20 pointer-events-none overflow-hidden rounded-full bg-white">
+                        <div class="absolute inset-0 w-full h-full pointer-events-none z-0" style="clip-path:polygon(70% 0%, 15% 55%, 45% 55%, 30% 100%, 85% 45%, 55% 45%);background:repeating-linear-gradient(-45deg, rgba(227,0,15,0.08) 0px, rgba(227,0,15,0.08) 4px, transparent 4px, transparent 8px);transform:scale(1.5);"></div>
+                        <div class="absolute top-[35px] w-full flex justify-center z-10">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] bg-white/90 px-4 py-1 rounded-full pointer-events-none drop-shadow-sm">Initiale Analyse</span>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center z-10 pointer-events-auto">
+                            <div class="w-[85%] max-w-[300px] h-[60px] bg-white text-[#E3000F] rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(227,0,15,0.06)] border border-red-100 transition-all duration-300 flex items-center justify-center gap-3 animate-pulse cursor-pointer active:scale-95">
+                                <i class="fa-solid fa-bolt text-2xl text-red-300"></i> 
+                                <span>Hier drücken</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- ENTSCHEIDUNG -->
+                    <div id="view-decision" class="hidden absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none drop-shadow-sm">Rhythmus ist:</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <button id="btn-shockable" class="w-[85%] max-w-[300px] h-[60px] bg-red-50 text-[#E3000F] rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(227,0,15,0.05)] border border-red-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_10px_30px_rgba(227,0,15,0.08)]">
+                                <i class="fa-solid fa-bolt text-2xl text-red-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Schockbar</span>
+                            </button>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center">
+                            <button id="btn-non-shockable" class="w-[85%] max-w-[300px] h-[60px] bg-white text-slate-600 rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(0,0,0,0.03)] border border-slate-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] hover:border-slate-300">
+                                <i class="fa-solid fa-wave-square text-2xl text-slate-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Nicht Schockbar</span>
+                            </button>
+                        </div>
+                        
+                        <!-- NEUE GEOMETRIE (w-[60%] und bottom-[35px]) BEI ALTEM LAYOUT -->
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-decision-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- CPR RESUME -->
+                    <div id="view-cpr-resume" class="hidden absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none drop-shadow-sm">CPR Fortsetzen</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <i class="fa-solid fa-heart-pulse text-6xl text-red-100 animate-pulse pointer-events-none"></i>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center pointer-events-auto">
+                            <button id="btn-confirm-resume" class="w-[85%] max-w-[300px] h-[60px] bg-[#E3000F] text-white rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_10px_30px_rgba(227,0,15,0.3)] border border-[#E3000F] active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_12px_35px_rgba(227,0,15,0.4)]">
+                                <i class="fa-solid fa-play text-2xl text-white/90 pointer-events-none"></i>
+                                <span class="pointer-events-none">Bestätigen</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- TIMER VIEW -->
+                    <div id="view-timer" class="hidden absolute inset-0 w-full h-full z-20 pointer-events-none rounded-full">
+                        <!-- Wird via app.js dynamisch gefüllt -->
+                    </div>
+                    
+                    <!-- JOULE -->
+                    <div id="view-joule" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex-col items-center justify-center pointer-events-none">
+                        <span class="absolute top-[35px] w-full text-center text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] drop-shadow-sm">Energie wählen</span>
+                        <div id="joule-container" class="flex flex-col w-[85%] pointer-events-auto z-10"></div>
+                        
+                        <span class="absolute bottom-[75px] w-full text-center text-[10px] font-bold text-red-500 uppercase tracking-[0.2em] animate-pulse">
+                            <i class="fa-solid fa-bolt mr-1"></i> Nach Schock bestätigen
+                        </span>
+                        
+                        <!-- NEUE GEOMETRIE (w-[60%] und bottom-[35px]) BEI ALTEM LAYOUT -->
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-joule-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- MEDIKAMENTE MENÜ (Flexbox Premium, Bottom-Save) -->
+                    <div id="view-meds-menu" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[14px] font-black text-slate-700 uppercase tracking-[0.25em] mb-2 pointer-events-none shrink-0 drop-shadow-sm">Medikamente</span>
+                        <div class="w-[85%] mx-auto h-[160px] overflow-y-auto custom-scrollbar px-1 pb-10 pointer-events-auto">
+                            <div id="amio-container" class="grid grid-cols-2 gap-2 w-full mb-3 border-b border-slate-100 pb-3"></div>
+                            <div id="sonstige-container" class="grid grid-cols-2 gap-2 w-full"></div>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-meds-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 🌟 PREMIUM ATEMWEG MENÜ 🌟 -->
+                    <div id="view-airway" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[13px] font-black text-slate-700 uppercase tracking-[0.25em] mb-2 pointer-events-none shrink-0 drop-shadow-sm">Atemweg</span>
+                        
+                        <div id="pediatric-airway-info" class="hidden w-[85%] bg-cyan-50 border border-cyan-200 rounded-xl p-2 mb-2 text-left shadow-sm shrink-0">
+                            <span class="text-[9px] font-black text-cyan-700 uppercase tracking-widest block mb-1 border-b border-cyan-100 pb-1 flex justify-between items-center pointer-events-none">
+                                <span>Material (<span id="airway-info-kg">--</span>)</span>
+                                <i class="fa-solid fa-baby text-cyan-500 text-sm"></i>
+                            </span>
+                            <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[9px] font-bold text-slate-600 pointer-events-none">
+                                <div class="flex justify-between"><span>Tubus:</span> <span id="airway-info-tubus" class="text-slate-900 font-black">--</span></div>
+                                <div class="flex justify-between"><span>Tiefe:</span> <span id="airway-info-tiefe" class="text-slate-900 font-black">--</span></div>
+                                <div class="flex justify-between"><span>Wendel:</span> <span id="airway-info-wendel" class="text-slate-900 font-black">--</span></div>
+                                <div class="flex justify-between"><span>Guedel:</span> <span id="airway-info-guedel" class="text-slate-900 font-black">--</span></div>
+                            </div>
+                        </div>
+                        
+                        <div id="airway-buttons-container" class="grid grid-cols-2 gap-1.5 w-[85%] mt-1 shrink-0 pointer-events-auto"></div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex gap-1.5 z-50 pointer-events-auto">
+                            <button id="btn-airway-cancel" class="bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                            <button id="btn-airway-edit-doc" class="bg-blue-50 border border-blue-200 text-blue-700 py-2.5 rounded-full flex-1 hidden active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all">Doku</button>
+                            <button id="btn-airway-remove" class="bg-red-50 border border-red-200 text-red-700 py-2.5 rounded-full flex-1 hidden active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all">Entf.</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 🌟 PREMIUM ATEMWEG DOKU MENÜ 🌟 -->
+                    <div id="view-airway-doc" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[13px] font-black text-slate-700 uppercase tracking-[0.25em] mb-3 shrink-0 drop-shadow-sm">Details (<span id="doc-airway-type"></span>)</span>
+                        
+                        <div class="w-[80%] flex flex-col gap-2 pointer-events-auto">
+                            <div class="flex gap-2 w-full">
+                                <input type="text" id="aw-size" placeholder="Größe" class="w-1/2 bg-slate-50 border border-slate-200 py-2 px-2 text-[11px] font-bold text-slate-700 text-center rounded-xl outline-none focus:border-cyan-400 shadow-sm transition-all">
+                                <input type="text" id="aw-depth" placeholder="Tiefe" class="w-1/2 bg-slate-50 border border-slate-200 py-2 px-2 text-[11px] font-bold text-slate-700 text-center rounded-xl outline-none focus:border-cyan-400 shadow-sm transition-all">
+                            </div>
+                            
+                            <div class="relative w-full">
+                                <input type="number" id="aw-cuff" placeholder="Cuff" value="25" class="w-full bg-slate-50 border border-slate-200 py-2 px-4 text-[11px] font-bold text-slate-700 text-center rounded-xl outline-none focus:border-cyan-400 shadow-sm transition-all pr-12">
+                                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">mbar</span>
+                            </div>
+
+                            <div class="text-[9px] font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded-xl border border-emerald-200 w-full shadow-sm mt-1 leading-tight">
+                                <i class="fa-solid fa-check-double mr-1"></i> EtCO2 & Cuff<br>prüfen!
+                            </div>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex gap-2 z-50 pointer-events-auto">
+                            <button id="btn-airway-doc-cancel" class="bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                            <button id="btn-airway-doc-save" class="bg-cyan-50 border border-cyan-200 text-cyan-700 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:shadow-md">Speich.</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 🌟 PREMIUM ZUGANG MENÜ 🌟 -->
+                    <div id="view-zugang" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[14px] font-black text-slate-700 uppercase tracking-[0.25em] mb-2 pointer-events-none shrink-0 drop-shadow-sm">Zugang</span>
+                        
+                        <div class="w-[80%] flex flex-col gap-1.5 pointer-events-auto">
+                            <!-- TYP -->
+                            <div class="relative w-full">
+                                <select id="zugang-typ" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm cursor-pointer text-left">
+                                    <option value="i.v.">💉 i.v. (Intravenös)</option>
+                                    <option value="i.o.">🦴 i.o. (Intraossär)</option>
+                                </select>
+                                <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] pointer-events-none"></i>
+                            </div>
+                            
+                            <!-- GRÖSSE -->
+                            <div class="relative w-full">
+                                <select id="zugang-groesse" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm cursor-pointer text-left">
+                                    <optgroup label="i.v. Farben">
+                                        <option value="Grün (18G)" selected>🟢 Grün (18G)</option>
+                                        <option value="Rosa (20G)">🌸 Rosa (20G)</option>
+                                        <option value="Blau (22G)">🔵 Blau (22G)</option>
+                                        <option value="Gelb (24G)">🟡 Gelb (24G)</option>
+                                        <option value="Weiß (17G)">⚪ Weiß (17G)</option>
+                                        <option value="Grau (16G)">🔘 Grau (16G)</option>
+                                        <option value="Orange (14G)">🟠 Orange (14G)</option>
+                                    </optgroup>
+                                    <optgroup label="i.o. Nadeln">
+                                        <option value="EZ-IO Pink">🟪 EZ-IO Pink (Kind)</option>
+                                        <option value="EZ-IO Blau">🟦 EZ-IO Blau (Erw.)</option>
+                                        <option value="EZ-IO Gelb">🟨 EZ-IO Gelb (Adipös)</option>
+                                    </optgroup>
+                                </select>
+                                <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] pointer-events-none"></i>
+                            </div>
+                            
+                            <!-- ORT -->
+                            <div class="relative w-full">
+                                <select id="zugang-ort" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm cursor-pointer text-left">
+                                    <optgroup label="i.v. Orte">
+                                        <option value="Handrücken" selected>📍 Handrücken</option>
+                                        <option value="Unterarm">📍 Unterarm</option>
+                                        <option value="Ellenbeuge">📍 Ellenbeuge</option>
+                                        <option value="Jugularis">📍 V. jugularis</option>
+                                    </optgroup>
+                                    <optgroup label="i.o. Orte">
+                                        <option value="Tibia prox.">📍 Tibia prox.</option>
+                                        <option value="Tibia dist.">📍 Tibia dist.</option>
+                                        <option value="Femur">📍 Femur</option>
+                                        <option value="Humerus">📍 Humerus</option>
+                                    </optgroup>
+                                </select>
+                                <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] pointer-events-none"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex gap-2 z-50 pointer-events-auto">
+                            <button id="btn-zugang-cancel" class="bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                            <button id="btn-zugang-save" class="bg-indigo-50 border border-indigo-200 text-indigo-700 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:shadow-md">Speich.</button>
+                        </div>
+                    </div>
+                    
+                    <!-- ROSC / ENDE -->
+                    <div id="view-rosc-end" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center pointer-events-none">
+                        <span class="text-[14px] font-black text-slate-700 uppercase tracking-[0.25em] mb-4 drop-shadow-sm">Einsatz beenden</span>
+                        
+                        <div class="w-[75%] flex flex-col gap-3">
+                            <button id="btn-opt-rosc" class="bg-emerald-50 border border-emerald-200 text-emerald-700 py-3.5 rounded-2xl shadow-sm w-full flex flex-col items-center justify-center active:scale-95 transition-all pointer-events-auto">
+                                <span class="text-[12px] font-black uppercase tracking-[0.2em] pointer-events-none">❤️ ROSC</span>
+                            </button>
+                            
+                            <button id="btn-opt-abbruch" class="bg-white border border-slate-200 text-slate-700 py-3.5 rounded-2xl shadow-sm w-full flex flex-col items-center justify-center active:scale-95 transition-all pointer-events-auto hover:bg-slate-50">
+                                <span class="text-[12px] font-black uppercase tracking-[0.2em] pointer-events-none">🛑 Abbruch</span>
+                            </button>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-rosc-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- ABBRUCH GRUND -->
+                    <div id="view-abbruch-reason" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center pointer-events-auto">
+                        <span class="text-[12px] font-black text-slate-700 uppercase tracking-[0.2em] mb-2 drop-shadow-sm">Grund für Abbruch</span>
+                        
+                        <div class="flex flex-col gap-1.5 w-[80%]">
+                            <button id="btn-reason-team" class="bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl shadow-sm w-full active:scale-95 text-[11px] font-bold uppercase tracking-wider transition-all hover:bg-slate-50">Teamentscheidung</button>
+                            <button id="btn-reason-family" class="bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl shadow-sm w-full active:scale-95 text-[11px] font-bold uppercase tracking-wider transition-all hover:bg-slate-50">Angehörige</button>
+                            <button id="btn-reason-doc" class="bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl shadow-sm w-full active:scale-95 text-[11px] font-bold uppercase tracking-wider transition-all hover:bg-slate-50">Patientenverfügung</button>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-abbruch-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- ROSC INTERFACE -->
+    <main id="rosc-interface" class="hidden flex-1 flex-col overflow-y-auto custom-scrollbar w-full bg-emerald-50 px-3 pt-3 pb-28 relative z-20">
+        <div class="flex gap-2 mb-3 shrink-0">
+            <button id="btn-rearrest" class="flex-1 bg-[#E3000F] text-white py-3 rounded-xl shadow-md font-black uppercase text-xs tracking-widest active:scale-95 flex flex-col items-center justify-center">RE-ARREST</button>
+            <button id="btn-rosc-exit" class="flex-1 bg-slate-800 text-white py-3 rounded-xl shadow-md font-black uppercase text-xs tracking-widest active:scale-95 flex flex-col items-center justify-center">EINSATZ ENDE</button>
+        </div>
+        
+        <div class="flex gap-2 mb-3 shrink-0">
+            <button id="btn-rosc-to-sampler" class="flex-1 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-xl shadow-sm font-bold uppercase text-[10px] tracking-widest active:scale-95 flex flex-col items-center justify-center"><i class="fa-solid fa-clipboard-list mb-1 text-slate-400"></i> SAMPLER / HITS</button>
+            <button id="btn-rosc-to-log" class="flex-1 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-xl shadow-sm font-bold uppercase text-[10px] tracking-widest active:scale-95 flex flex-col items-center justify-center"><i class="fa-solid fa-clock-rotate-left mb-1 text-slate-400"></i> LOGBUCH</button>
+        </div>
+        
+        <div id="pedi-rosc-vitals" class="hidden bg-cyan-50 border border-cyan-200 rounded-2xl p-4 mb-3 shadow-sm shrink-0">
+            <div class="flex justify-between items-center border-b border-cyan-100 pb-2 mb-2">
+                <span class="text-[10px] font-black text-cyan-700 uppercase tracking-widest flex items-center gap-1.5"><i class="fa-solid fa-baby text-cyan-500"></i> Pedi-Safe-Limits</span>
+                <span class="text-[10px] font-black text-cyan-600 bg-white px-2 py-0.5 rounded-md shadow-sm border border-cyan-100" id="pedi-rosc-kg">-- kg</span>
+            </div>
+            <div class="grid grid-cols-2 gap-y-3 gap-x-2">
+                <div><span class="block text-[8px] font-bold text-slate-500 uppercase tracking-widest">Ziel-RR (Syst.)</span><span id="pedi-rosc-rr" class="text-sm font-black text-slate-800">--</span></div>
+                <div><span class="block text-[8px] font-bold text-slate-500 uppercase tracking-widest">Norm-HF</span><span id="pedi-rosc-hr" class="text-sm font-black text-slate-800">--</span></div>
+                <div class="col-span-2 bg-white rounded-lg p-2 border border-cyan-100 flex justify-between items-center mt-1 shadow-sm">
+                    <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Tidalvolumen (6 ml/kg)</span>
+                    <span id="pedi-rosc-vt" class="text-[15px] font-black text-cyan-600">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm px-4 py-4 mb-2 border border-emerald-100 shrink-0">
+            <h3 class="font-black text-emerald-700 uppercase tracking-wider mb-2 text-sm text-center border-b border-emerald-50 pb-2">Post-ROSC Bündel</h3>
+            <div id="rosc-container" class="flex flex-col gap-1.5 mt-2"></div>
+        </div>
+    </main>
+
+    <!-- LOGBUCH PANEL (Slide-Up) -->
+    <div id="protocol-panel" class="fixed bottom-0 left-0 right-0 w-full h-[95dvh] bg-white shadow-[0_-15px_50px_rgba(0,0,0,0.3)] z-[80] transform translate-y-full flex flex-col rounded-t-3xl overflow-hidden transition-transform duration-300">
+        <div class="flex flex-col px-5 py-4 border-b border-slate-200 bg-slate-50 shrink-0 gap-4 z-20">
+            <div class="flex justify-between items-center w-full">
+                <h3 class="font-black text-slate-800 uppercase tracking-wider text-lg">Protokoll</h3>
+                <button id="btn-close-log" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">Schließen</button>
+            </div>
+            <div class="flex justify-between items-center w-full">
+                <div class="flex bg-slate-200 p-1 rounded-xl">
+                    <button id="btn-view-timeline" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-slate-500 transition-all">Zeitlinie</button>
+                    <button id="btn-view-list" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-white text-slate-800 shadow-sm transition-all">Liste</button>
+                    <button id="btn-view-summary" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-slate-500 transition-all">Übergabe</button>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-undo-log" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-[12px] active:scale-95"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button id="btn-export-log" class="bg-[#E3000F] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-sm active:scale-95"><i class="fa-solid fa-download"></i></button>
+                </div>
+            </div>
+        </div>
+        <div id="protocol-list" class="flex-1 overflow-hidden bg-slate-50 flex flex-col custom-scrollbar relative"></div>
+    </div>
+
+    <!-- HITS MODAL -->
+    <div id="hits-panel" class="fixed bottom-0 left-0 right-0 w-full h-[85vh] bg-white shadow-[0_-15px_50px_rgba(0,0,0,0.3)] z-[90] transform translate-y-full flex flex-col rounded-t-3xl overflow-hidden transition-transform duration-300">
+        <div class="flex flex-col px-5 py-4 border-b border-slate-200 bg-slate-50 shrink-0 gap-3 z-20">
+            <div class="flex justify-between items-center w-full">
+                <h3 class="font-black text-slate-800 uppercase tracking-wider text-lg">Zusatzinfos</h3>
+                <button id="btn-close-hits" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">Schließen</button>
+            </div>
+            <div class="flex bg-slate-200 p-1 rounded-xl w-full">
+                <button id="btn-tab-hits" class="flex-1 px-3 py-2 rounded-lg text-[11px] font-black uppercase bg-white text-slate-800 shadow-sm transition-all">HITS-Schema</button>
+                <button id="btn-tab-anamnese" class="flex-1 px-3 py-2 rounded-lg text-[11px] font-black uppercase text-slate-500 transition-all">SAMPLER</button>
+            </div>
+        </div>
+        <div id="view-hits" class="flex-1 overflow-y-auto p-4 gap-2.5 flex flex-col bg-slate-100 custom-scrollbar pb-10"></div>
+        <div id="view-anamnese" class="hidden flex-1 overflow-y-auto p-4 flex flex-col bg-slate-100 custom-scrollbar pb-10"></div>
+    </div>
+
+    <!-- PÄDIATRIE MODAL -->
+    <div id="patient-setup-modal" class="hidden fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-3">
+        <div class="bg-white rounded-[2rem] p-4 w-full max-w-md border border-slate-100 shadow-2xl flex flex-col relative max-h-[98vh] overflow-y-auto custom-scrollbar">
+            <button id="btn-close-pedi-modal" class="absolute top-3 right-3 w-8 h-8 bg-slate-100 rounded-full text-slate-500 flex items-center justify-center active:scale-90 z-20 transition-all"><i class="fa-solid fa-xmark"></i></button>
+            
+            <div class="text-center mb-3 mt-0">
+                <h3 class="text-lg font-black text-slate-800 uppercase tracking-widest">Pädiatrie Setup</h3>
+            </div>
+
+            <div class="mb-3">
+                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block text-center mb-1.5">Maßband-Farbe (Schnellwahl)</span>
+                <div class="grid grid-cols-3 gap-1.5" id="color-grid">
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="grau" style="background-color: #9ca3af; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">GRAU</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">4 kg &bull; 55 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="rosa" style="background-color: #f472b6; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">ROSA</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">6.5 kg &bull; 65 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="rot" style="background-color: #ef4444; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">ROT</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">8.5 kg &bull; 70 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="lila" style="background-color: #a855f7; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">LILA</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">10.5 kg &bull; 80 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="gelb" style="background-color: #eab308; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">GELB</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">13 kg &bull; 90 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all border border-slate-200" data-color="weiss" style="background-color: #ffffff; color: #334155;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none">WEISS</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide">16.5 kg &bull; 100 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="blau" style="background-color: #3b82f6; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">BLAU</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">21 kg &bull; 110 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="orange" style="background-color: #f97316; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">ORANGE</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">26.5 kg &bull; 120 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="gruen" style="background-color: #22c55e; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">GRÜN</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">33 kg &bull; 135 cm</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex flex-col mb-3 px-3 py-1 bg-white rounded-[1.5rem] shadow-[0_4px_20px_rgb(0,0,0,0.04)] border border-slate-100">
+                <div class="flex flex-col gap-1 py-2 border-b border-dashed border-slate-100">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Alter</span>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="slider-age" min="0" max="12" value="0" class="flex-1 h-2 bg-slate-200 rounded-full accent-[#E3000F] cursor-pointer appearance-none outline-none">
+                        <span id="val-age" class="bg-slate-50 text-slate-600 border border-slate-200 font-bold text-[9px] uppercase tracking-wider rounded-xl flex items-center justify-center w-[110px] h-9 shadow-sm shrink-0">Säugling (< 1 J.)</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 py-2 border-b border-dashed border-slate-100">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Gewicht</span>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="slider-kg" min="3" max="36" value="4" class="flex-1 h-2 bg-slate-200 rounded-full accent-[#E3000F] cursor-pointer appearance-none outline-none">
+                        <div class="relative bg-red-50 border border-red-100 rounded-xl shadow-sm w-[110px] h-9 flex items-center justify-center overflow-hidden shrink-0 group">
+                            <span id="val-kg" class="hidden">4 kg</span>
+                            <input type="number" id="exact-kg-input" class="w-full h-full bg-transparent text-center font-black text-[#E3000F] text-[14px] outline-none pr-6" value="4">
+                            <div class="absolute right-3 pointer-events-none flex flex-col items-center justify-center">
+                                <i class="fa-solid fa-sort text-[9px] text-red-300 mb-0.5"></i>
+                                <span class="text-[8px] font-black text-red-300 leading-none">kg</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 py-2">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Größe</span>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="slider-cm" min="50" max="140" value="55" class="flex-1 h-2 bg-slate-200 rounded-full accent-[#E3000F] cursor-pointer appearance-none outline-none">
+                        <span id="val-cm" class="bg-blue-50 text-blue-600 border border-blue-100 font-black text-[12px] rounded-xl flex items-center justify-center w-[110px] h-9 shadow-sm shrink-0">55 cm</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="summary-badge" class="hidden w-full bg-slate-50 border border-slate-200 text-slate-600 rounded-[1rem] px-3 py-2 text-center text-[10px] font-black tracking-widest shadow-inner mb-3"></div>
+
+            <div class="flex gap-2 w-full mt-auto">
+                <button id="btn-start-pediatric-unknown" class="flex-1 bg-slate-50 border border-slate-200 text-slate-500 py-3 rounded-2xl font-bold uppercase text-[9px] shadow-sm active:bg-slate-100 transition-all tracking-widest flex flex-col items-center justify-center leading-tight">
+                    <i class="fa-solid fa-scale-unbalanced text-slate-400 text-sm mb-1"></i>
+                    Gewicht später
+                </button>
+                <button id="btn-start-pediatric" class="flex-[1.5] bg-[#E3000F] text-white py-3 rounded-2xl font-black uppercase text-[11px] shadow-[0_8px_20px_rgba(227,0,15,0.25)] active:scale-95 transition-transform tracking-widest flex justify-center items-center gap-2">
+                    Starten <i class="fa-solid fa-play text-[10px]"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settings-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-slate-50 w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-100">
+            <div class="bg-white px-5 py-4 border-b border-slate-100 flex justify-center items-center shrink-0">
+                <h3 class="font-black text-slate-800 uppercase tracking-widest text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-slate-400"></i> Einstellungen
+                </h3>
+            </div>
+            <div class="p-5 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+                <div>
+                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Metronom Geschwindigkeit</h4>
+                    <div class="flex bg-slate-200/50 p-1.5 rounded-xl gap-1">
+                        <button class="bpm-opt flex-1 py-3 text-slate-400 font-black text-lg rounded-lg transition-all border border-transparent bg-transparent" data-bpm="100">100</button>
+                        <button class="bpm-opt flex-1 py-3 text-slate-800 font-black text-lg rounded-lg shadow-sm bg-white transition-all border border-slate-100 transform scale-105" data-bpm="110">110</button>
+                        <button class="bpm-opt flex-1 py-3 text-slate-400 font-black text-lg rounded-lg transition-all border border-transparent bg-transparent" data-bpm="120">120</button>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">System Diagnose</h4>
+                    <div class="bg-red-50/40 border border-red-100 p-3 rounded-2xl flex flex-col gap-3">
+                        <button id="btn-show-syslog" class="w-full bg-white border border-slate-200 text-slate-700 py-3.5 rounded-xl font-bold text-sm shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                            <i class="fa-solid fa-bug text-slate-400"></i> Fehlerprotokoll einsehen
+                        </button>
+                        <button id="btn-hard-reset" class="w-full bg-[#E3000F] border border-red-600 text-white py-3.5 rounded-xl font-black text-sm shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Hard Reset (Daten löschen)
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2 text-center px-4">
+                    <span class="text-xs font-black text-slate-700 tracking-widest block mb-1">CPR ASSIST <span class="text-[#E3000F]">VFINAL</span></span>
+                    <p class="text-[10px] text-slate-500 leading-tight">Nutzung auf eigene Gefahr.</p>
+                </div>
+            </div>
+            <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+                <button id="btn-close-settings-bottom" class="w-full bg-slate-100 text-slate-700 py-3.5 rounded-xl font-black uppercase text-xs shadow-sm border border-slate-200 active:scale-95 flex items-center justify-center gap-2 transition-all">
+                    <i class="fa-solid fa-arrow-rotate-left text-lg"></i> Zurück zum Einsatz
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPORT MODAL -->
+    <div id="export-modal" class="hidden fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm border-2 border-slate-200 shadow-2xl relative">
+            <h3 class="text-xl font-black text-slate-800 uppercase tracking-wide mb-4 text-center">Exportieren</h3>
+            <div class="mb-5"><h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 text-center">Protokoll-Umfang</h4><div class="flex bg-slate-100 p-1 rounded-xl"><button id="btn-export-short" class="flex-1 py-2 rounded-lg text-[10px] font-black uppercase bg-white text-slate-800 shadow-sm border border-slate-200 transition-all">Übergabe</button><button id="btn-export-long" class="flex-1 py-2 rounded-lg text-[10px] font-black uppercase text-slate-500 border border-transparent transition-all">Debriefing</button></div></div>
+            <div class="flex flex-col gap-3 mb-4"><button id="btn-run-txt-export" class="w-full bg-blue-50 text-blue-700 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-blue-200 active:scale-95 flex items-center justify-center gap-2"><i class="fa-solid fa-copy text-lg"></i> Text kopieren</button><button id="btn-run-pdf-export" class="w-full bg-[#E3000F] text-white py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm active:scale-95 flex items-center justify-center gap-2"><i class="fa-solid fa-file-pdf text-lg"></i> PDF speichern</button></div>
+            <button id="btn-cancel-export" class="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest p-3 active:scale-90 transition-all text-center border border-slate-200 rounded-xl">Abbrechen</button>
+        </div>
+    </div>
+    
+    <!-- STANDARD DIALOG MODAL -->
+    <div id="custom-dialog" class="hidden fixed inset-0 z-[250] bg-slate-900/90 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col text-center border-2 border-slate-200">
+            <div id="dialog-icon" class="text-4xl mb-3"></div><h3 id="dialog-title" class="text-lg font-black text-slate-800 uppercase tracking-wide mb-2"></h3>
+            <div id="dialog-message" class="text-sm font-bold text-slate-600 mb-6 max-h-[50vh] overflow-y-auto custom-scrollbar text-left p-2 bg-slate-50 rounded-lg border border-slate-100"></div>
+            <div class="flex gap-3 w-full"><button id="btn-dialog-cancel" class="hidden flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black uppercase text-xs active:scale-95">Abbrechen</button><button id="btn-dialog-confirm" class="flex-1 bg-[#E3000F] text-white py-3 rounded-xl font-black uppercase text-xs active:scale-95 shadow-md">OK</button></div>
+        </div>
+    </div>
+
+    <!-- DEBRIEFING MODAL -->
+    <div id="debriefing-modal" class="hidden fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] p-6 w-full max-w-sm border border-slate-100 shadow-2xl relative flex flex-col items-center">
+            <div class="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-3 border border-emerald-100 shadow-sm"><i class="fa-solid fa-flag-checkered text-3xl text-emerald-500"></i></div>
+            <h2 class="text-2xl font-black text-slate-800 uppercase tracking-wide mb-1 text-center">Einsatz Beendet</h2>
+            <p class="text-slate-400 font-bold mb-5 text-center text-xs uppercase tracking-widest">Zeit für das Debriefing</p>
+            <div class="bg-slate-50 p-4 rounded-2xl w-full mb-6 border border-slate-100 shadow-inner">
+                <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Gesamtdauer</span><span class="text-sm font-black text-slate-800" id="debrief-duration">00:00</span></div>
+                <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">CCF (Kompression)</span><span class="text-sm font-black text-slate-800" id="debrief-ccf">0%</span></div>
+                <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Schocks abgegeben</span><span class="text-sm font-black text-amber-500" id="debrief-shocks">0</span></div>
+                <div class="flex justify-between items-center"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Adrenalin</span><span class="text-sm font-black text-[#E3000F]" id="debrief-adr">0</span></div>
+            </div>
+            <div class="w-full flex flex-col gap-3">
+                <button id="btn-debrief-export" class="w-full bg-blue-50 text-blue-700 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-blue-200 active:scale-95 flex items-center justify-center gap-2 transition-all"><i class="fa-solid fa-file-pdf text-lg"></i> Export / Protokoll</button>
+                <button id="btn-debrief-resume" class="w-full bg-white text-slate-600 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-slate-200 active:scale-95 flex items-center justify-center gap-2 transition-all"><i class="fa-solid fa-arrow-rotate-left text-lg"></i> Zurück zum Einsatz</button>
+                <button id="btn-debrief-reset" class="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest p-3 active:scale-90 transition-all text-center border border-slate-200 rounded-xl bg-white shadow-sm mt-2">Neuer Einsatz (Daten löschen)</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 🌟 MODULARER APP-AUFBAU 🌟 -->
+    <script src="js/config.js?v=1001"></script>
+    <script src="js/utils.js?v=1001"></script>
+    <script src="js/audio.js?v=1001"></script>
+    <script src="js/export.js?v=1001"></script> 
+    <script src="js/settings.js?v=1001"></script>
+    <script src="js/checklists.js?v=1001"></script>
+    <script src="js/ui.js?v=1001"></script>
+    <script src="js/app.js?v=1001"></script>
+    <script src="js/airway-timer.js?v=1001"></script>
+    <script src="js/adr-timer.js?v=1001"></script> 
+    <script src="js/cpr-timer.js?v=1001"></script> 
+    <script src="js/help-overlay.js?v=1001"></script>
+    <script src="js/debriefing.js?v=1001"></script>
+    <script src="js/log-timeline.js?v=1001"></script>
+    
+    <!-- 🌟 NATIVE ROSC-MENU HOOKS (Verhindert Konflikte mit ui.js / app.js) 🌟 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnSampler = document.getElementById('btn-rosc-to-sampler');
+            const btnLog = document.getElementById('btn-rosc-to-log');
+            
+            const hitsPanel = document.getElementById('hits-panel');
+            const protocolPanel = document.getElementById('protocol-panel');
+
+            if (btnSampler && hitsPanel) {
+                btnSampler.addEventListener('click', () => {
+                    if (window.CPR && window.CPR.Utils) window.CPR.Utils.vibrate(20);
+                    hitsPanel.classList.remove('translate-y-full');
+                });
+            }
+
+            if (btnLog && protocolPanel) {
+                btnLog.addEventListener('click', () => {
+                    if (window.CPR && window.CPR.Utils) window.CPR.Utils.vibrate(20);
+                    protocolPanel.classList.remove('translate-y-full');
+                    if (window.CPR.LogTimeline && typeof window.CPR.LogTimeline.forceRender === 'function') {
+                        window.CPR.LogTimeline.forceRender();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
