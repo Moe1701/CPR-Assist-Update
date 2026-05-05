@@ -1,18 +1,13 @@
 /**
  * CPR Assist - Master Controller (Medical Grade Background-Safe)
+ * - FEATURE: Natives "Beutel-Maske" Routing integriert.
+ * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
  * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
  * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
  * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
  * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
- * - BUGFIX (navHelper): Verhindert das Ausblenden der UI beim App-Resume aus dem Hintergrund.
- * - BUGFIX (Sonnenfinsternis): Hardcodierte DOM opacity-0 Klassen werden bei Dashboard-Init bereinigt.
- * - UX FIX (Space Reservation): Target-Displacement im Onboarding behoben. Button hüpft nicht mehr!
  * - BULLETPROOF FIX: Top Stats werden über redundante DOM-Befehle garantiert eingeblendet.
  * - TIME TRAVEL FIX: CPR und CCF-Berechnung laufen während App-Backgrounding lückenlos weiter.
- * - OVERLAP FIX: Redundanter "Jetzt hier drücken" Text entfernt für saubereres Layout im kleinen Button.
- * - LOGBOOK FIX: Rhythmusanalyse triggert nun aktiv das Schlüsselwort "PAUSE" für den roten Logbuch-Balken.
- * - TIMING FIX: Timer und CCF starten erst physisch mit dem Klick auf "Kompression gestartet".
- * - CCF FIX: Die erste Rhythmusanalyse aus dem Onboarding pausiert nun ebenfalls korrekterweise die Kompression!
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -739,23 +734,82 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         addClick('btn-airway', (e) => { e.stopPropagation(); navHelper('AIRWAY_MENU', 'view-airway', 'large'); });
+        
+        // 🌟 DIE NEUE, INTEGRIERTE ATEMWEGS-WEICHE 🌟
         addClick('view-airway', (e) => {
-            const isCancel = e.target.closest('#btn-airway-cancel'); const isRemove = e.target.closest('#btn-airway-remove'); const isEdit = e.target.closest('#btn-airway-edit-doc'); const isOpt = e.target.closest('.btn-airway-opt');
+            const isCancel = e.target.closest('#btn-airway-cancel'); 
+            const isRemove = e.target.closest('#btn-airway-remove'); 
+            const isEdit = e.target.closest('#btn-airway-edit-doc'); 
+            const isOpt = e.target.closest('.btn-airway-opt');
+            
             if (isOpt) {
-                e.stopPropagation(); Globals.tempAirwayType = isOpt.dataset.short; const docAwType = document.getElementById('doc-airway-type'); if (docAwType) docAwType.innerText = Globals.tempAirwayType;
-                if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
+                e.stopPropagation(); 
+                Globals.tempAirwayType = isOpt.dataset.short; 
+                
+                if (Globals.tempAirwayType === 'Beutel-Maske') {
+                    // ---> PFAD A: BEUTEL-MASKE (Skip Doku, bleibe im CPR-Zyklus 30:2/15:2)
+                    if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(30);
+                    markMenuAction();
+                    addLogEntry("Atemweg: Beutel-Maske"); 
+                    
+                    const awLabel = document.getElementById('airway-label'); 
+                    if (awLabel) awLabel.innerText = "Beutel-Maske";
+                    
+                    document.getElementById('btn-airway-remove')?.classList.remove('hidden'); 
+                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); // Kein Stift bei BVM
+                    
+                    AppState.airwayEstablished = true; 
+                    AppState.compressionCount = 0; // Kompressionen resetten, damit Modus frisch anfängt
+                    AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
+                    addLogEntry(`Modus: ${AppState.cprMode} (Beutel-Maske)`); 
+                    
+                    if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); 
+                    
+                    navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
+                    
+                    // CPR Timer weiterlaufen lassen falls aktiv
+                    if (AppState.state === 'RUNNING' && CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') {
+                        CPR.CPRTimer.start(false); 
+                    }
+                    updateCprUI();
+                    Utils.saveSession();
+
+                } else {
+                    // ---> PFAD B: INVASIVER ATEMWEG (ETI, SGA etc. -> Öffne Doku-Menü)
+                    const docAwType = document.getElementById('doc-airway-type'); 
+                    if (docAwType) docAwType.innerText = Globals.tempAirwayType;
+                    if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
+                }
+
             } else if (isCancel || isRemove) {
                 e.stopPropagation(); Utils.vibrate(30); markMenuAction(); 
                 if (isRemove) {
-                    addLogEntry("Atemweg entfernt"); const awLabel = document.getElementById('airway-label'); if (awLabel) awLabel.innerText = 'Atemweg';
-                    AppState.airwayEstablished = false; AppState.compressionCount = 0;
-                    if (AppState.cprMode === 'continuous') { AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; addLogEntry(`Modus: ${AppState.cprMode} (Auto-Switch)`); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); }
-                    document.getElementById('btn-airway-remove')?.classList.add('hidden'); document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); updateCprUI();
+                    addLogEntry("Atemweg entfernt"); 
+                    const awLabel = document.getElementById('airway-label'); 
+                    if (awLabel) awLabel.innerText = 'Atemweg';
+                    
+                    AppState.airwayEstablished = false; 
+                    AppState.compressionCount = 0;
+                    
+                    // Fällt bei Entfernung automatisch auf KONT zurück, falls es BVM war (wie beim Onboarding)
+                    if (AppState.cprMode === 'continuous') { 
+                        AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
+                        addLogEntry(`Modus: ${AppState.cprMode} (Auto-Switch)`); 
+                        if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); 
+                    }
+                    
+                    document.getElementById('btn-airway-remove')?.classList.add('hidden'); 
+                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); 
+                    updateCprUI();
                 }
                 navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
+            
             } else if (isEdit) {
-                e.stopPropagation(); Utils.vibrate(30); const awLab = document.getElementById('airway-label'); Globals.tempAirwayType = awLab ? awLab.innerText : 'Atemweg';
-                const docAwType = document.getElementById('doc-airway-type'); if (docAwType) docAwType.innerText = Globals.tempAirwayType;
+                e.stopPropagation(); Utils.vibrate(30); 
+                const awLab = document.getElementById('airway-label'); 
+                Globals.tempAirwayType = awLab ? awLab.innerText : 'Atemweg';
+                const docAwType = document.getElementById('doc-airway-type'); 
+                if (docAwType) docAwType.innerText = Globals.tempAirwayType;
                 if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
             }
         });
@@ -922,7 +976,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const awLabel = document.getElementById('airway-label'); if (awLabel) awLabel.innerText = session.airwayLabel || "Atemweg";
             const zugLabel = document.getElementById('zugang-label'); if (zugLabel) zugLabel.innerText = session.zugangLabel || "Zugang";
             
-            if (AppState.airwayEstablished) { document.getElementById('btn-airway-remove')?.classList.remove('hidden'); document.getElementById('btn-airway-edit-doc')?.classList.remove('hidden'); }
+            if (AppState.airwayEstablished) { 
+                document.getElementById('btn-airway-remove')?.classList.remove('hidden'); 
+                // Blende den Doku-Stift beim Neuladen NUR dann ein, wenn es NICHT Beutel-Maske war
+                if (session.airwayLabel !== 'Beutel-Maske') {
+                    document.getElementById('btn-airway-edit-doc')?.classList.remove('hidden'); 
+                }
+            }
+
             if (UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
             updateCCF(); 
             if (UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); 
