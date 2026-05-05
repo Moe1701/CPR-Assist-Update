@@ -3,6 +3,7 @@
  * - FEATURE: Natives "Beutel-Maske" Routing integriert.
  * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
  * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
+ * - SMART PROMPT: Atemwegs-Button pulsiert "Beatmung?", solange kein Atemweg etabliert wurde!
  * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
  * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
  * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
@@ -340,6 +341,45 @@ document.addEventListener('DOMContentLoaded', function() {
         const handsOffTimer = document.getElementById('cpr-hands-off-timer');
         
         if (Globals.pauseInterval) { clearInterval(Globals.pauseInterval); Globals.pauseInterval = null; }
+
+        // =========================================================================
+        // 🌟 NEU: SMART PROMPT LOGIK (Der pulsierende "Beatmung?" Hinweis)
+        // =========================================================================
+        const btnAw = document.getElementById('btn-airway');
+        const awLabel = document.getElementById('airway-label');
+        const awIcon = document.getElementById('aw-icon');
+
+        if (!AppState.airwayEstablished) {
+            if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
+                // RUNNING & KEIN ATEMWEG -> Warnung pulsieren lassen
+                if (awLabel) {
+                    awLabel.innerText = "Beatmung?";
+                    awLabel.classList.add('text-amber-400', 'animate-pulse');
+                }
+                if (awIcon) {
+                    awIcon.classList.add('text-amber-400', 'animate-pulse');
+                    awIcon.classList.remove('text-slate-400'); 
+                }
+                if (btnAw) btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+            } else {
+                // NICHT RUNNING & KEIN ATEMWEG -> Normal (Grau)
+                if (awLabel) {
+                    awLabel.innerText = "Atemweg";
+                    awLabel.classList.remove('text-amber-400', 'animate-pulse');
+                }
+                if (awIcon) {
+                    awIcon.classList.remove('text-amber-400', 'animate-pulse');
+                    awIcon.classList.add('text-slate-400');
+                }
+                if (btnAw) btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+            }
+        } else {
+            // ATEMWEG ETABLIERT -> Clean-Up der Amber-Klassen (Steuerung übernimmt die native Logik)
+            if (awLabel) awLabel.classList.remove('text-amber-400', 'animate-pulse');
+            if (awIcon) awIcon.classList.remove('text-amber-400', 'animate-pulse');
+            if (btnAw) btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+        }
+        // =========================================================================
 
         if (btnCpr) {
             btnCpr.classList.remove('bg-amber-50', 'bg-red-50', 'pause-warning', 'animate-pulse', 'border-red-600', 'border-amber-400', 'shadow-[0_0_60px_rgba(227,0,15,0.9)]', 'shadow-[0_0_80px_rgba(227,0,15,1)]', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'scale-110');
