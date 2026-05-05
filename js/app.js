@@ -374,7 +374,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.CPR.AudioContext && window.CPR.AudioContext.ctx) window.CPR.AudioContext.nextNoteTime = window.CPR.AudioContext.ctx.currentTime + 0.05;
             if (AudioEngine && typeof AudioEngine.scheduler === 'function') AudioEngine.scheduler();
             
-            if (AppState.cprMode === 'continuous' && window.CPR.AirwayTimer) {
+            if (AppState.cprMode === 'continuous' && AppState.airwayEstablished === true && window.CPR.AirwayTimer) {
                 window.CPR.AirwayTimer.start();
             } else if (window.CPR.AirwayTimer) {
                 window.CPR.AirwayTimer.stop();
