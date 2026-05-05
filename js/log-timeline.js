@@ -1,19 +1,17 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V60 - Medical Grade Analytics)
- * - FEATURE: Intelligente Stats-Engine aggregiert Behandlungs-KPIs on-the-fly!
+ * CPR Assist - Log Timeline & KPI Stats Modul (V61 - Bulletproof Event Delegation)
+ * - BUGFIX: Harte CSS-Overrides (`style.display` & `style.color`) beheben eingefrorene Tabs!
+ * - BUGFIX: Globale Event-Delegation sorgt dafür, dass Reiter IMMER klickbar bleiben.
+ * - FEATURE: Intelligente Stats-Engine aggregiert Behandlungs-KPIs on-the-fly.
  * - FEATURE: Dynamische Tab-Injektion (Fügt "KPIs" Tab automatisch ins UI ein).
- * - FEATURE: Naked-Icons für kompakte, EKG-Style Timelines.
- * - FEATURE: Vollständiges SBAR-Summary & Chronologische Liste.
- * - ARCHITEKTUR: 100% autark. Erzeugt fehlende DOM-Elemente selbst.
  */
 
 window.CPR = window.CPR || {};
 
 window.CPR.LogTimeline = (function() {
     let currentView = 'list'; 
-    let liveMarkerInterval = null;
     
-    // --- 1. ICON & JOULE LOGIK ---
+    // --- 1. ICON & LOGIK ---
     function getIconData(txt) {
         if (!txt) return { icon: '•', color: 'text-slate-400', bg: 'bg-slate-100' };
         const t = txt.toLowerCase();
@@ -49,24 +47,27 @@ window.CPR.LogTimeline = (function() {
     function renderList() {
         const container = document.getElementById('log-list-content');
         if (!container) return;
-        const data = window.CPR.AppState?.protocolData || [];
+        const data = (window.CPR.AppState && window.CPR.AppState.protocolData) ? window.CPR.AppState.protocolData : [];
         
         if (data.length === 0) {
-            container.innerHTML = '<div class="text-center text-slate-400 mt-10 font-bold">Noch keine Einträge.</div>';
+            container.innerHTML = '<div class="text-center text-slate-400 mt-10 font-bold w-full">Noch keine Einträge.</div>';
             return;
         }
 
-        let html = '<div class="space-y-2 p-4">';
+        let html = '<div class="space-y-2 p-4 w-full">';
         data.forEach(item => {
             const iconObj = getIconData(item.action);
+            const sec = item.secondsFromStart || 0;
+            const timeStr = window.CPR.Utils && typeof window.CPR.Utils.formatTime === 'function' ? window.CPR.Utils.formatTime(sec) : '--:--';
+            
             html += `
                 <div class="flex items-center bg-white p-3 rounded-xl shadow-sm border border-slate-100">
                     <div class="w-10 h-10 shrink-0 rounded-full ${iconObj.bg} ${iconObj.color} flex items-center justify-center font-black text-sm shadow-sm mr-3">
                         ${iconObj.icon}
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-[13px] font-bold text-slate-700 truncate">${item.action}</div>
-                        <div class="text-[10px] font-bold text-slate-400">${item.time} (+${window.CPR.Utils.formatTime(item.secondsFromStart)})</div>
+                        <div class="text-[13px] font-bold text-slate-700 truncate">${item.action || 'Eintrag'}</div>
+                        <div class="text-[10px] font-bold text-slate-400">${item.time || ''} (+${timeStr})</div>
                     </div>
                 </div>
             `;
@@ -79,27 +80,30 @@ window.CPR.LogTimeline = (function() {
     function renderTimeline() {
         const container = document.getElementById('log-timeline-content');
         if (!container) return;
-        const data = window.CPR.AppState?.protocolData || [];
+        const data = (window.CPR.AppState && window.CPR.AppState.protocolData) ? window.CPR.AppState.protocolData : [];
 
         if (data.length === 0) {
-            container.innerHTML = '<div class="text-center text-slate-400 mt-10 font-bold">Warte auf Ereignisse...</div>';
+            container.innerHTML = '<div class="text-center text-slate-400 mt-10 font-bold w-full">Warte auf Ereignisse...</div>';
             return;
         }
 
-        let html = '<div class="relative pl-6 ml-4 mt-4 border-l-2 border-slate-200 space-y-6 pb-12">';
+        let html = '<div class="relative pl-6 ml-4 mt-4 border-l-2 border-slate-200 space-y-6 pb-12 w-full">';
         data.forEach(item => {
             const iconObj = getIconData(item.action);
+            const sec = item.secondsFromStart || 0;
+            const timeStr = window.CPR.Utils && typeof window.CPR.Utils.formatTime === 'function' ? window.CPR.Utils.formatTime(sec) : '--:--';
+
             html += `
                 <div class="relative">
-                    <div class="absolute -left-[35px] bg-[#f8fafc] py-1">
+                    <div class="absolute -left-[35px] bg-[#f8fafc] py-1 z-10">
                         <div class="w-8 h-8 rounded-full ${iconObj.bg} ${iconObj.color} flex items-center justify-center font-black text-xs shadow-sm ring-4 ring-[#f8fafc]">
                             ${iconObj.icon}
                         </div>
                     </div>
                     <div class="pl-4">
                         <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-100 inline-block max-w-[90%]">
-                            <div class="text-[12px] font-black text-slate-800">${item.action}</div>
-                            <div class="text-[9px] font-bold text-slate-400 mt-0.5">${item.time} | +${window.CPR.Utils.formatTime(item.secondsFromStart)} min</div>
+                            <div class="text-[12px] font-black text-slate-800">${item.action || 'Eintrag'}</div>
+                            <div class="text-[9px] font-bold text-slate-400 mt-0.5">${item.time || ''} | +${timeStr} min</div>
                         </div>
                     </div>
                 </div>
@@ -113,9 +117,9 @@ window.CPR.LogTimeline = (function() {
     function renderSummary() {
         const container = document.getElementById('log-summary-content');
         if (!container) return;
-        const state = window.CPR.AppState;
+        const state = window.CPR.AppState || {};
         
-        let html = '<div class="p-4 space-y-4 pb-12">';
+        let html = '<div class="p-4 space-y-4 pb-12 w-full">';
         
         // Einsatz Infos
         html += `
@@ -149,24 +153,22 @@ window.CPR.LogTimeline = (function() {
         container.innerHTML = html;
     }
 
-    // --- 5. RENDER: KPI STATISTIKEN (DER NEUE MEDICAL GRADE PARSER) ---
+    // --- 5. RENDER: KPI STATISTIKEN ---
     function renderStats() {
         const container = document.getElementById('log-stats-content');
         if (!container) return;
 
-        const data = window.CPR.AppState?.protocolData || [];
+        const data = (window.CPR.AppState && window.CPR.AppState.protocolData) ? window.CPR.AppState.protocolData : [];
+        const state = window.CPR.AppState || {};
         
-        // Stats Engine Variablen
         let firstCPR = null, firstShock = null, firstAirway = null, firstAdr = null, firstAccess = null, roscTime = null;
         let pauses = [], pauseStart = null;
         let analyses = [], lastAnalysis = null;
         
-        // Parser-Logik
         data.forEach(item => {
-            const a = item.action.toLowerCase();
-            const s = item.secondsFromStart;
+            const a = (item.action || '').toLowerCase();
+            const s = item.secondsFromStart || 0;
 
-            // Golden Hour Metriken
             if (!firstCPR && (a.includes('start rea') || a.includes('kompression begonnen'))) firstCPR = s;
             if (!firstShock && a.includes('schock abgegeben')) firstShock = s;
             if (!firstAirway && (a.includes('atemweg:') && !a.includes('entfernt'))) firstAirway = s;
@@ -174,7 +176,6 @@ window.CPR.LogTimeline = (function() {
             if (!firstAccess && a.includes('zugang:')) firstAccess = s;
             if (!roscTime && (a.includes('rosc eingetreten') || a.includes('rosc'))) roscTime = s;
 
-            // Pausen-Aggregator
             if (a.includes('kompression pause')) {
                 pauseStart = s;
             } else if (a.includes('kompression fortgesetzt') && pauseStart !== null) {
@@ -183,7 +184,6 @@ window.CPR.LogTimeline = (function() {
                 pauseStart = null;
             }
 
-            // Analyse-Disziplin (Zeit zwischen Checks)
             if (a.includes('rhythmusanalyse')) {
                 if (lastAnalysis !== null) {
                     const diff = s - lastAnalysis;
@@ -193,27 +193,22 @@ window.CPR.LogTimeline = (function() {
             }
         });
 
-        // Mathematik
         const maxPause = pauses.length ? Math.max(...pauses) : 0;
         const avgPause = pauses.length ? Math.round(pauses.reduce((a,b)=>a+b,0) / pauses.length) : 0;
         const avgCheck = analyses.length ? Math.round(analyses.reduce((a,b)=>a+b,0) / analyses.length) : 0;
         
-        // CCF Re-Kalkulation zur Sicherheit
-        const arrSec = window.CPR.AppState.arrestSeconds || 0;
-        const compSec = window.CPR.AppState.compressingSeconds || 0;
+        const arrSec = state.arrestSeconds || 0;
+        const compSec = state.compressingSeconds || 0;
         const ccf = arrSec > 0 ? Math.min(100, Math.round((compSec / arrSec) * 100)) : 0;
 
-        // Hilfsfunktion für saubere Zeit-Anzeige
-        const ft = (sec) => sec !== null ? window.CPR.Utils.formatTime(sec) : '--:--';
+        const ft = (sec) => sec !== null && window.CPR.Utils && window.CPR.Utils.formatTime ? window.CPR.Utils.formatTime(sec) : '--:--';
         
-        // Qualitäts-Farben
         const ccfColor = ccf >= 80 ? 'text-emerald-500' : 'text-[#E3000F]';
         const pauseColor = maxPause > 10 ? 'text-[#E3000F]' : (maxPause > 0 ? 'text-emerald-500' : 'text-slate-400');
         const avgPauseColor = avgPause > 10 ? 'text-[#E3000F]' : (avgPause > 0 ? 'text-emerald-500' : 'text-slate-400');
 
-        let html = '<div class="p-4 space-y-4 pb-12">';
+        let html = '<div class="p-4 space-y-4 pb-12 w-full">';
         
-        // KACHEL 1: GOLDEN HOUR
         html += `
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
                 <div class="bg-amber-50 px-4 py-2 border-b border-amber-100 flex items-center gap-2">
@@ -229,7 +224,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // KACHEL 2: QUALITÄT (CCF & Pausen)
         html += `
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
                 <div class="bg-indigo-50 px-4 py-2 border-b border-indigo-100 flex items-center gap-2">
@@ -237,7 +231,6 @@ window.CPR.LogTimeline = (function() {
                     <h3 class="text-[10px] uppercase font-black text-indigo-700 tracking-widest">Performance (KPI)</h3>
                 </div>
                 <div class="p-4 space-y-4">
-                    <!-- CCF Bar -->
                     <div>
                         <div class="flex justify-between items-end mb-1">
                             <span class="text-[10px] font-bold text-slate-400 uppercase">CCF (Kompressionfraktion)</span>
@@ -266,7 +259,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // KACHEL 3: EREIGNISSE & OUTCOME
         html += `
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
                 <div class="bg-emerald-50 px-4 py-2 border-b border-emerald-100 flex items-center gap-2">
@@ -275,9 +267,9 @@ window.CPR.LogTimeline = (function() {
                 </div>
                 <div class="p-4 grid grid-cols-2 gap-4">
                     <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Zeit bis ROSC</span><span class="font-black ${roscTime ? 'text-emerald-500' : 'text-slate-400'} text-lg">${ft(roscTime)}</span></div>
-                    <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Defibrillationen</span><span class="font-black text-slate-700 text-lg">${window.CPR.AppState.shockCount || 0}x</span></div>
-                    <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Adrenalin Gesamt</span><span class="font-black text-slate-700 text-lg">${window.CPR.AppState.adrCount || 0} Dosen</span></div>
-                    <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Amiodaron Gesamt</span><span class="font-black text-slate-700 text-lg">${window.CPR.AppState.amioCount || 0} Dosen</span></div>
+                    <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Defibrillationen</span><span class="font-black text-slate-700 text-lg">${state.shockCount || 0}x</span></div>
+                    <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Adrenalin Gesamt</span><span class="font-black text-slate-700 text-lg">${state.adrCount || 0} Dosen</span></div>
+                    <div><span class="block text-[9px] font-bold text-slate-400 uppercase">Amiodaron Gesamt</span><span class="font-black text-slate-700 text-lg">${state.amioCount || 0} Dosen</span></div>
                 </div>
             </div>
         `;
@@ -286,7 +278,7 @@ window.CPR.LogTimeline = (function() {
         container.innerHTML = html;
     }
 
-    // --- TAB SWITCHER LOGIK ---
+    // --- TAB SWITCHER LOGIK (Nukleare Option: Inline Styles erzwingen!) ---
     function switchTab(tab) {
         currentView = tab;
         const ids = ['list', 'timeline', 'summary', 'stats'];
@@ -295,27 +287,34 @@ window.CPR.LogTimeline = (function() {
             const btn = document.getElementById('btn-view-' + id);
             const content = document.getElementById('log-' + id + '-content');
             
+            // Reiter hart stylen (ignoriert Tailwind Override-Probleme)
             if (btn) {
                 if (id === tab) {
-                    btn.classList.replace('text-slate-400', 'text-slate-800');
-                    btn.classList.replace('border-transparent', 'border-slate-800');
+                    btn.style.color = '#1e293b'; // slate-800
+                    btn.style.borderBottomColor = '#1e293b';
                 } else {
-                    btn.classList.replace('text-slate-800', 'text-slate-400');
-                    btn.classList.replace('border-slate-800', 'border-transparent');
+                    btn.style.color = '#94a3b8'; // slate-400
+                    btn.style.borderBottomColor = 'transparent';
                 }
             }
+            
+            // Container hart ein-/ausblenden (Überschreibt flex/hidden Konflikte)
             if (content) {
                 if (id === tab) {
+                    content.style.display = 'flex';
                     content.classList.remove('hidden');
-                    content.classList.add('flex');
                 } else {
+                    content.style.display = 'none';
                     content.classList.add('hidden');
-                    content.classList.remove('flex');
                 }
             }
         });
 
-        renderCurrentView();
+        try {
+            renderCurrentView();
+        } catch (e) {
+            console.error("[CPR] Render-Fehler im Logbuch:", e);
+        }
     }
 
     function renderCurrentView() {
@@ -327,50 +326,63 @@ window.CPR.LogTimeline = (function() {
 
     // --- INITIALISIERUNG & DOM-INJEKTION ---
     function init() {
-        // 🌟 ARCHITEKTUR-HACK: Wir injizieren den KPIs Tab dynamisch in die NavBar, 
-        // ohne dass index.html jemals angefasst werden muss!
-        const tabContainer = document.getElementById('btn-view-summary')?.parentElement;
-        if (tabContainer && !document.getElementById('btn-view-stats')) {
-            const btnStats = document.createElement('button');
-            btnStats.id = 'btn-view-stats';
-            btnStats.className = 'flex-1 py-3 text-[10px] font-black uppercase text-slate-400 border-b-2 border-transparent transition-all';
-            btnStats.innerText = 'KPIs';
-            tabContainer.appendChild(btnStats);
+        try {
+            // KPI Tab injizieren
+            const tabContainer = document.getElementById('btn-view-summary')?.parentElement;
+            if (tabContainer && !document.getElementById('btn-view-stats')) {
+                const btnStats = document.createElement('button');
+                btnStats.id = 'btn-view-stats';
+                btnStats.className = 'flex-1 py-3 text-[10px] font-black uppercase transition-all border-b-2';
+                btnStats.style.color = '#94a3b8';
+                btnStats.style.borderColor = 'transparent';
+                btnStats.innerText = 'KPIs';
+                tabContainer.appendChild(btnStats);
+            }
+
+            // KPI Content injizieren
+            const contentContainer = document.getElementById('log-summary-content')?.parentElement;
+            if (contentContainer && !document.getElementById('log-stats-content')) {
+                const divStats = document.createElement('div');
+                divStats.id = 'log-stats-content';
+                divStats.className = 'hidden flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50 w-full';
+                contentContainer.appendChild(divStats);
+            }
+
+            // 🌟 EVENT DELEGATION: Fängt Klicks auf Tabs IMMER sicher ab, egal wann gerendert wurde!
+            document.addEventListener('click', function(e) {
+                const tabBtn = e.target.closest('button[id^="btn-view-"]');
+                if (tabBtn) {
+                    const id = tabBtn.id.replace('btn-view-', '');
+                    if (['list', 'timeline', 'summary', 'stats'].includes(id)) {
+                        e.preventDefault(); 
+                        e.stopPropagation();
+                        if (window.CPR.Utils && typeof window.CPR.Utils.vibrate === 'function') window.CPR.Utils.vibrate(20);
+                        switchTab(id);
+                    }
+                }
+            });
+
+            // Fallback für externe Aktualisierungen
+            const btnToggle = document.getElementById('btn-toggle-protocol');
+            if (btnToggle) btnToggle.addEventListener('click', () => { renderCurrentView(); });
+            
+            const btnDebrief = document.getElementById('btn-rosc-end');
+            if (btnDebrief) btnDebrief.addEventListener('click', () => { setTimeout(renderCurrentView, 500); });
+
+            // Startansicht sichern
+            setTimeout(() => { switchTab('list'); }, 100);
+            
+        } catch (e) {
+            console.error("[CPR] Logbuch Init-Fehler:", e);
         }
-
-        // Dazugehörigen Content-Container injizieren
-        const contentContainer = document.getElementById('log-summary-content')?.parentElement;
-        if (contentContainer && !document.getElementById('log-stats-content')) {
-            const divStats = document.createElement('div');
-            divStats.id = 'log-stats-content';
-            divStats.className = 'hidden flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50';
-            contentContainer.appendChild(divStats);
-        }
-
-        // Event-Listener anheften
-        const btnTime = document.getElementById('btn-view-timeline');
-        if (btnTime) btnTime.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if(window.CPR.Utils) window.CPR.Utils.vibrate(20); switchTab('timeline'); });
-        
-        const btnList = document.getElementById('btn-view-list');
-        if (btnList) btnList.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if(window.CPR.Utils) window.CPR.Utils.vibrate(20); switchTab('list'); });
-        
-        const btnSumm = document.getElementById('btn-view-summary');
-        if (btnSumm) btnSumm.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if(window.CPR.Utils) window.CPR.Utils.vibrate(20); switchTab('summary'); });
-
-        const btnStatsTab = document.getElementById('btn-view-stats');
-        if (btnStatsTab) btnStatsTab.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if(window.CPR.Utils) window.CPR.Utils.vibrate(20); switchTab('stats'); });
-
-        const btnToggle = document.getElementById('btn-toggle-protocol');
-        if (btnToggle) btnToggle.addEventListener('click', () => { renderCurrentView(); });
-        
-        const btnDebrief = document.getElementById('btn-rosc-end');
-        if(btnDebrief) btnDebrief.addEventListener('click', () => { setTimeout(renderCurrentView, 500); });
-
-        // Standard-Tab nach Start
-        setTimeout(() => { switchTab('list'); }, 100);
     }
 
     return { init: init, forceRender: renderCurrentView };
 })();
 
-document.addEventListener('DOMContentLoaded', () => { setTimeout(() => { if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init(); }, 150); });
+// Stabiler Autostart
+document.addEventListener('DOMContentLoaded', () => { 
+    setTimeout(() => { 
+        if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init(); 
+    }, 150); 
+});
