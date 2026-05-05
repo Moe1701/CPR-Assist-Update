@@ -3,7 +3,7 @@
  * - FEATURE: Natives "Beutel-Maske" Routing integriert.
  * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
  * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
- * - SMART PROMPT: Atemwegs-Button pulsiert "Beatmung?", solange kein Atemweg etabliert wurde!
+ * - SMART PROMPT (VISUAL HAMMER): Atemwegs-Button pulsiert "Atemweg wählen" extrem auffällig, solange kein Atemweg etabliert wurde!
  * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
  * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
  * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (Globals.pauseInterval) { clearInterval(Globals.pauseInterval); Globals.pauseInterval = null; }
 
         // =========================================================================
-        // 🌟 NEU: SMART PROMPT LOGIK (Der pulsierende "Beatmung?" Hinweis)
+        // 🌟 NEU: SMART PROMPT LOGIK (Der pulsierende "Atemweg wählen" Hinweis)
         // =========================================================================
         const btnAw = document.getElementById('btn-airway');
         const awLabel = document.getElementById('airway-label');
@@ -353,31 +353,47 @@ document.addEventListener('DOMContentLoaded', function() {
             if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
                 // RUNNING & KEIN ATEMWEG -> Warnung pulsieren lassen
                 if (awLabel) {
-                    awLabel.innerText = "Beatmung?";
-                    awLabel.classList.add('text-amber-400', 'animate-pulse');
+                    awLabel.innerText = "Atemweg wählen";
+                    awLabel.classList.add('text-amber-500', 'animate-pulse', 'font-black');
+                    awLabel.classList.remove('font-bold');
                 }
                 if (awIcon) {
-                    awIcon.classList.add('text-amber-400', 'animate-pulse');
+                    awIcon.classList.add('text-amber-500', 'animate-pulse');
                     awIcon.classList.remove('text-slate-400'); 
                 }
-                if (btnAw) btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+                if (btnAw) {
+                    btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50/50');
+                    btnAw.classList.remove('border-slate-200', 'border-slate-100');
+                }
             } else {
                 // NICHT RUNNING & KEIN ATEMWEG -> Normal (Grau)
                 if (awLabel) {
                     awLabel.innerText = "Atemweg";
-                    awLabel.classList.remove('text-amber-400', 'animate-pulse');
+                    awLabel.classList.remove('text-amber-500', 'text-amber-400', 'animate-pulse', 'font-black');
+                    awLabel.classList.add('font-bold');
                 }
                 if (awIcon) {
-                    awIcon.classList.remove('text-amber-400', 'animate-pulse');
+                    awIcon.classList.remove('text-amber-500', 'text-amber-400', 'animate-pulse');
                     awIcon.classList.add('text-slate-400');
                 }
-                if (btnAw) btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+                if (btnAw) {
+                    btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50/50');
+                    btnAw.classList.add('border-slate-200');
+                }
             }
         } else {
             // ATEMWEG ETABLIERT -> Clean-Up der Amber-Klassen (Steuerung übernimmt die native Logik)
-            if (awLabel) awLabel.classList.remove('text-amber-400', 'animate-pulse');
-            if (awIcon) awIcon.classList.remove('text-amber-400', 'animate-pulse');
-            if (btnAw) btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+            if (awLabel) {
+                awLabel.classList.remove('text-amber-500', 'text-amber-400', 'animate-pulse', 'font-black');
+                awLabel.classList.add('font-bold');
+            }
+            if (awIcon) {
+                awIcon.classList.remove('text-amber-500', 'text-amber-400', 'animate-pulse');
+            }
+            if (btnAw) {
+                btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50/50');
+                btnAw.classList.add('border-slate-200');
+            }
         }
         // =========================================================================
 
