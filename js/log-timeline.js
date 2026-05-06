@@ -1,9 +1,8 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V61 - Bulletproof Event Delegation)
- * - BUGFIX: Harte CSS-Overrides (`style.display` & `style.color`) beheben eingefrorene Tabs!
- * - BUGFIX: Globale Event-Delegation sorgt dafür, dass Reiter IMMER klickbar bleiben.
+ * CPR Assist - Log Timeline & KPI Stats Modul (V62 - Ultra Bulletproof)
+ * - BUGFIX: Direkte, hart verdrahtete Event-Listener statt fehleranfälliger Delegation.
+ * - BUGFIX: Harte CSS-Overrides (`style.display`) für garantierte Panel-Wechsel.
  * - FEATURE: Intelligente Stats-Engine aggregiert Behandlungs-KPIs on-the-fly.
- * - FEATURE: Dynamische Tab-Injektion (Fügt "KPIs" Tab automatisch ins UI ein).
  */
 
 window.CPR = window.CPR || {};
@@ -278,7 +277,7 @@ window.CPR.LogTimeline = (function() {
         container.innerHTML = html;
     }
 
-    // --- TAB SWITCHER LOGIK (Nukleare Option: Inline Styles erzwingen!) ---
+    // --- TAB SWITCHER LOGIK (Harte Overrides für 100% Sicherheit) ---
     function switchTab(tab) {
         currentView = tab;
         const ids = ['list', 'timeline', 'summary', 'stats'];
@@ -287,34 +286,28 @@ window.CPR.LogTimeline = (function() {
             const btn = document.getElementById('btn-view-' + id);
             const content = document.getElementById('log-' + id + '-content');
             
-            // Reiter hart stylen (ignoriert Tailwind Override-Probleme)
+            // Reiter hart stylen
             if (btn) {
                 if (id === tab) {
-                    btn.style.color = '#1e293b'; // slate-800
+                    btn.style.color = '#1e293b'; 
                     btn.style.borderBottomColor = '#1e293b';
                 } else {
-                    btn.style.color = '#94a3b8'; // slate-400
+                    btn.style.color = '#94a3b8'; 
                     btn.style.borderBottomColor = 'transparent';
                 }
             }
             
-            // Container hart ein-/ausblenden (Überschreibt flex/hidden Konflikte)
+            // Container hart ein-/ausblenden
             if (content) {
                 if (id === tab) {
                     content.style.display = 'flex';
-                    content.classList.remove('hidden');
                 } else {
                     content.style.display = 'none';
-                    content.classList.add('hidden');
                 }
             }
         });
 
-        try {
-            renderCurrentView();
-        } catch (e) {
-            console.error("[CPR] Render-Fehler im Logbuch:", e);
-        }
+        try { renderCurrentView(); } catch (e) { console.error("[CPR] Render-Fehler:", e); }
     }
 
     function renderCurrentView() {
@@ -324,12 +317,42 @@ window.CPR.LogTimeline = (function() {
         else if (currentView === 'stats') renderStats();
     }
 
+    // --- BINDE EVENT LISTENER ABSOLUT SICHER ---
+    function bindEventsSafely() {
+        // Hilfsfunktion: Hängt Listener an, sobald das Element da ist
+        function tryBind(id, tabName) {
+            const el = document.getElementById(id);
+            if (el) {
+                // Verhindert doppelte Bindungen
+                el.replaceWith(el.cloneNode(true));
+                const newEl = document.getElementById(id);
+                newEl.addEventListener('click', (e) => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(20);
+                    switchTab(tabName);
+                });
+            }
+        }
+
+        tryBind('btn-view-list', 'list');
+        tryBind('btn-view-timeline', 'timeline');
+        tryBind('btn-view-summary', 'summary');
+        tryBind('btn-view-stats', 'stats'); // Falls es schon injiziert wurde
+
+        const btnToggle = document.getElementById('btn-toggle-protocol');
+        if (btnToggle) {
+            btnToggle.replaceWith(btnToggle.cloneNode(true));
+            document.getElementById('btn-toggle-protocol').addEventListener('click', () => { renderCurrentView(); });
+        }
+    }
+
     // --- INITIALISIERUNG & DOM-INJEKTION ---
     function init() {
         try {
-            // KPI Tab injizieren
-            const tabContainer = document.getElementById('btn-view-summary')?.parentElement;
-            if (tabContainer && !document.getElementById('btn-view-stats')) {
+            // KPI Tab injizieren, falls er noch fehlt
+            const btnSumm = document.getElementById('btn-view-summary');
+            if (btnSumm && btnSumm.parentElement && !document.getElementById('btn-view-stats')) {
+                const tabContainer = btnSumm.parentElement;
                 const btnStats = document.createElement('button');
                 btnStats.id = 'btn-view-stats';
                 btnStats.className = 'flex-1 py-3 text-[10px] font-black uppercase transition-all border-b-2';
@@ -339,35 +362,19 @@ window.CPR.LogTimeline = (function() {
                 tabContainer.appendChild(btnStats);
             }
 
-            // KPI Content injizieren
-            const contentContainer = document.getElementById('log-summary-content')?.parentElement;
-            if (contentContainer && !document.getElementById('log-stats-content')) {
+            // KPI Content injizieren, falls er noch fehlt
+            const contentSumm = document.getElementById('log-summary-content');
+            if (contentSumm && contentSumm.parentElement && !document.getElementById('log-stats-content')) {
+                const contentContainer = contentSumm.parentElement;
                 const divStats = document.createElement('div');
                 divStats.id = 'log-stats-content';
-                divStats.className = 'hidden flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50 w-full';
+                divStats.className = 'flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50 w-full';
+                divStats.style.display = 'none'; // Wichtig: Startet ausgeblendet!
                 contentContainer.appendChild(divStats);
             }
 
-            // 🌟 EVENT DELEGATION: Fängt Klicks auf Tabs IMMER sicher ab, egal wann gerendert wurde!
-            document.addEventListener('click', function(e) {
-                const tabBtn = e.target.closest('button[id^="btn-view-"]');
-                if (tabBtn) {
-                    const id = tabBtn.id.replace('btn-view-', '');
-                    if (['list', 'timeline', 'summary', 'stats'].includes(id)) {
-                        e.preventDefault(); 
-                        e.stopPropagation();
-                        if (window.CPR.Utils && typeof window.CPR.Utils.vibrate === 'function') window.CPR.Utils.vibrate(20);
-                        switchTab(id);
-                    }
-                }
-            });
-
-            // Fallback für externe Aktualisierungen
-            const btnToggle = document.getElementById('btn-toggle-protocol');
-            if (btnToggle) btnToggle.addEventListener('click', () => { renderCurrentView(); });
-            
-            const btnDebrief = document.getElementById('btn-rosc-end');
-            if (btnDebrief) btnDebrief.addEventListener('click', () => { setTimeout(renderCurrentView, 500); });
+            // Events bombenfest verdrahten
+            bindEventsSafely();
 
             // Startansicht sichern
             setTimeout(() => { switchTab('list'); }, 100);
@@ -380,9 +387,14 @@ window.CPR.LogTimeline = (function() {
     return { init: init, forceRender: renderCurrentView };
 })();
 
-// Stabiler Autostart
-document.addEventListener('DOMContentLoaded', () => { 
-    setTimeout(() => { 
-        if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init(); 
-    }, 150); 
-});
+// Stabiler Autostart (Mit Polling-Sicherung, falls DOM zu langsam ist)
+let initAttempts = 0;
+function safeStart() {
+    if (document.getElementById('btn-view-summary')) {
+        if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init();
+    } else if (initAttempts < 10) {
+        initAttempts++;
+        setTimeout(safeStart, 100);
+    }
+}
+document.addEventListener('DOMContentLoaded', safeStart);
