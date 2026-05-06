@@ -1,7 +1,7 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V62 - Ultra Bulletproof)
- * - BUGFIX: Direkte, hart verdrahtete Event-Listener statt fehleranfälliger Delegation.
- * - BUGFIX: Harte CSS-Overrides (`style.display`) für garantierte Panel-Wechsel.
+ * CPR Assist - Log Timeline & KPI Stats Modul (V63 - Clean Architecture)
+ * - BUGFIX: 'cloneNode' Überschneidung entfernt! Zerstört keine Listener der app.js mehr.
+ * - ARCHITEKTUR: Modul kümmert sich NUR NOCH um die internen Tabs, nicht mehr um das Panel selbst.
  * - FEATURE: Intelligente Stats-Engine aggregiert Behandlungs-KPIs on-the-fly.
  */
 
@@ -317,33 +317,23 @@ window.CPR.LogTimeline = (function() {
         else if (currentView === 'stats') renderStats();
     }
 
-    // --- BINDE EVENT LISTENER ABSOLUT SICHER ---
-    function bindEventsSafely() {
-        // Hilfsfunktion: Hängt Listener an, sobald das Element da ist
-        function tryBind(id, tabName) {
-            const el = document.getElementById(id);
+    // --- BINDE EVENT LISTENER ABSOLUT SICHER (NUR DIE TABS!) ---
+    function bindTabEvents() {
+        const ids = ['list', 'timeline', 'summary', 'stats'];
+        ids.forEach(tabName => {
+            const elId = 'btn-view-' + tabName;
+            const el = document.getElementById(elId);
             if (el) {
-                // Verhindert doppelte Bindungen
-                el.replaceWith(el.cloneNode(true));
-                const newEl = document.getElementById(id);
+                // Wir klonen NUR die internen Tabs, niemals externe Buttons wie den Dashboard-Toggle!
+                const newEl = el.cloneNode(true);
+                el.replaceWith(newEl);
                 newEl.addEventListener('click', (e) => {
                     e.preventDefault(); e.stopPropagation();
                     if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(20);
                     switchTab(tabName);
                 });
             }
-        }
-
-        tryBind('btn-view-list', 'list');
-        tryBind('btn-view-timeline', 'timeline');
-        tryBind('btn-view-summary', 'summary');
-        tryBind('btn-view-stats', 'stats'); // Falls es schon injiziert wurde
-
-        const btnToggle = document.getElementById('btn-toggle-protocol');
-        if (btnToggle) {
-            btnToggle.replaceWith(btnToggle.cloneNode(true));
-            document.getElementById('btn-toggle-protocol').addEventListener('click', () => { renderCurrentView(); });
-        }
+        });
     }
 
     // --- INITIALISIERUNG & DOM-INJEKTION ---
@@ -373,8 +363,8 @@ window.CPR.LogTimeline = (function() {
                 contentContainer.appendChild(divStats);
             }
 
-            // Events bombenfest verdrahten
-            bindEventsSafely();
+            // Events der internen Reiter bombenfest verdrahten
+            bindTabEvents();
 
             // Startansicht sichern
             setTimeout(() => { switchTab('list'); }, 100);
