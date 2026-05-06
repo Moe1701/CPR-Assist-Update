@@ -4,11 +4,7 @@
  * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
  * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
  * - SMART PROMPT (VISUAL HAMMER): Atemwegs-Button zeigt nun aktiv "DOKU FEHLT" an!
- * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
- * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
- * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
- * - BULLETPROOF FIX: Top Stats werden über redundante DOM-Befehle garantiert eingeblendet.
- * - TIME TRAVEL FIX: CPR und CCF-Berechnung laufen während App-Backgrounding lückenlos weiter.
+ * - BUGFIX: Redundanter Aufruf von UI.updateSatellites() entfernt (CSS regelt das!).
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -85,7 +81,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (AppState.isCompressing) AppState.compressingSeconds += deltaSec;
         
         // CATCH-UP für den Cycle-Timer
-        // Wenn die Zeit springt (Tab gewechselt), ziehen wir den Timer sauber ab
         if (deltaSec > 0 && AppState.cycleSeconds > 0) {
             AppState.cycleSeconds -= deltaSec;
             if (AppState.cycleSeconds < 0) AppState.cycleSeconds = 0;
@@ -93,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         updateTopStats();
         
-        // Cycle-Timer Updates auf dem Screen (Wenn Analyse läuft etc.)
+        // Cycle-Timer Updates auf dem Screen
         if (AppState.state === 'COMPRESSING' || AppState.state === 'VENTILATING' || AppState.state === 'PAUSED_CPR') {
             updateCycleTimerUI();
             updateCircleProgress();
@@ -102,9 +97,8 @@ document.addEventListener('DOMContentLoaded', function() {
             updateRoscTimer(deltaSec);
         }
 
-        lastTickTime += (deltaSec * 1000); // Setze lastTickTime um die verarbeiteten Sekunden vorwärts
+        lastTickTime += (deltaSec * 1000); 
         
-        // Wenn die App lange im Background war (delta > 2s), rendern wir hart neu, um Grafik-Glitches zu fixen
         if (deltaSec > 2 && window.CPR.CPRTimer) {
              window.CPR.CPRTimer.updateUI();
         }
@@ -120,7 +114,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function startMainTick() {
         if (mainTickInterval) clearInterval(mainTickInterval);
         lastTickTime = Date.now();
-        // Schnelleres Polling (200ms) für eine smarte Delta-Erkennung
         mainTickInterval = setInterval(runMainTick, 200);
     }
     function stopMainTick() {
@@ -149,7 +142,6 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('top-stats-container').classList.remove('opacity-0');
             document.getElementById('medical-disclaimer').classList.add('hidden');
             
-            // Setze Startzeit
             const d = new Date();
             const startStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
             document.getElementById('start-time').innerText = startStr;
@@ -166,7 +158,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (newState !== 'IDLE') document.getElementById('top-stats-container').classList.remove('opacity-0');
 
-        // Satelliten Logik: Bei Menüs ausblenden (wird im CSS geregelt, wir setzen nur die Klasse)
         const isMenuState = ['DECISION', 'RESUME', 'JOULE', 'MEDS_MENU', 'AIRWAY_MENU', 'ZUGANG_MENU', 'END_MENU', 'ABBRUCH_MENU', 'AIRWAY_DOC'].includes(newState);
         if (isMenuState) document.body.classList.add('center-menu-open');
         else document.body.classList.remove('center-menu-open');
@@ -180,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (newState === 'COMPRESSING' || newState === 'VENTILATING' || newState === 'PAUSED_CPR') {
             document.body.classList.add('dashboard-active');
-            UI.updateSatellites();
+            // UI.updateSatellites(); ENTFERNT: CSS kümmert sich um die Satelliten!
         } else {
             document.body.classList.remove('dashboard-active');
             const sat = document.getElementById('satellites');
@@ -247,7 +238,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateCycleTimerUI();
                 updateCircleProgress();
                 updateCprUI();
-                UI.updateSatellites();
+                // UI.updateSatellites(); ENTFERNT: CSS kümmert sich um die Satelliten!
                 break;
             case 'ROSC':
                 document.getElementById('cpr-interface').classList.add('hidden');
@@ -522,13 +513,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.getElementById('btn-analyze')?.addEventListener('click', () => {
-        // Der Button ist anklickbar, wenn der Cycle abgelaufen ist (roter Rahmen)
         const btnArea = document.getElementById('main-btn-area');
         if (btnArea && btnArea.classList.contains('border-red-400')) {
             Utils.vibrate(30);
             addLogEntry("Rhythmusanalyse");
             
-            // Defi-Alarme sicher ausblenden
             const pa = document.getElementById('inner-prepare-alert');
             const pc = document.getElementById('inner-precharge-alert');
             const aa = document.getElementById('inner-analyze-alert');
@@ -545,10 +534,9 @@ document.addEventListener('DOMContentLoaded', function() {
         AppState.isShockable = true;
         addLogEntry("Rhythmus: Schockbar");
         
-        // Energie vorschlagen (Pediatrie vs Erwachsen)
         let jouleText = '150 - 200 J';
         if (AppState.isPediatric && AppState.patientWeight) {
-            jouleText = Math.round(AppState.patientWeight * 4) + ' J'; // 4 J / kg
+            jouleText = Math.round(AppState.patientWeight * 4) + ' J'; 
         } else if (AppState.isPediatric) {
             jouleText = '4 J / kg';
         }
@@ -567,7 +555,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     AppState.shockCount = (AppState.shockCount || 0) + 1;
                     addLogEntry("Schock abgegeben (" + jouleText + ")");
                     
-                    // CPR Timer Hard-Reset für die 2-Minuten Reanimation!
                     if (window.CPR.CPRTimer && typeof window.CPR.CPRTimer.reset === 'function') window.CPR.CPRTimer.reset();
                     
                     AppState.isCompressing = true;
@@ -584,7 +571,6 @@ document.addEventListener('DOMContentLoaded', function() {
         AppState.isShockable = false;
         addLogEntry("Rhythmus: Nicht Schockbar");
         
-        // CPR Timer Hard-Reset!
         if (window.CPR.CPRTimer && typeof window.CPR.CPRTimer.reset === 'function') window.CPR.CPRTimer.reset();
         
         AppState.cycleSeconds = CONFIG.CYCLE_SEC;
@@ -657,7 +643,6 @@ document.addEventListener('DOMContentLoaded', function() {
             btnAnalyze.querySelector('span').innerText = 'Rhythmus Check';
             btnAnalyze.disabled = true;
 
-            // Warnungen steuern (Nur wenn wir drücken!)
             if (AppState.state === 'COMPRESSING') {
                 if (sec <= CONFIG.PRECHARGE_WARN_SEC && sec > 0) {
                     if(alertPrep) { alertPrep.classList.add('hidden'); alertPrep.classList.remove('flex'); }
@@ -682,14 +667,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateCircleProgress() {
         const pct = Math.max(0, Math.min(100, (AppState.cycleSeconds / CONFIG.CYCLE_SEC) * 100));
-        let color = '#10b981'; // Emerald
+        let color = '#10b981'; 
         if (AppState.cycleSeconds <= CONFIG.PRECHARGE_WARN_SEC) color = '#E3000F';
         else if (AppState.cycleSeconds <= CONFIG.PREPARE_WARN_SEC) color = '#f59e0b';
         UI.updateCircle('progress-circle', pct, color);
     }
 
     // =========================================================
-    // 🌟 CPR / BEATMUNGS BUTTON LOGIK (Das dynamische Herzstück!)
+    // 🌟 CPR / BEATMUNGS BUTTON LOGIK
     // =========================================================
     function updateCprUI() {
         const btnCpr = document.getElementById('btn-cpr');
@@ -701,7 +686,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const iPause = document.getElementById('cpr-icon-pause');
         const iVent = document.getElementById('cpr-icon-vent');
 
-        // Satelliten Logik (Sicher ausblenden bei Menüs)
         const isMenuOpen = document.body.classList.contains('center-menu-open');
 
         if (AppState.state === 'COMPRESSING') {
@@ -715,7 +699,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (AppState.airwayEstablished && window.CPR.AirwayTimer) {
                 window.CPR.AirwayTimer.start();
             } else if (!AppState.airwayEstablished && AppState.isRunning !== false) {
-                // SMART PROMPT (VISUAL HAMMER) - Jetzt als Task!
                 if (btnAw.dataset.isWarning !== "true") {
                     btnAw.innerHTML = `
                         <div class="absolute inset-0 bg-amber-400/20 animate-pulse rounded-full"></div>
@@ -754,7 +737,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.CPR.AirwayTimer) window.CPR.AirwayTimer.pause();
         }
 
-        // Atemwegs-Button zurücksetzen, wenn etabliert
         if (AppState.airwayEstablished && btnAw.dataset.isWarning === "true") {
             btnAw.innerHTML = `
                 <div id="aw-glow-bg" class="absolute inset-0 w-full h-full bg-cyan-300 opacity-0 pointer-events-none rounded-full transition-opacity duration-150"></div>
@@ -778,7 +760,6 @@ document.addEventListener('DOMContentLoaded', function() {
             Utils.vibrate(20);
             AppState.isCompressing = false;
             
-            // Wichtig: Beim Umschalten auf Beatmung den internen Zähler in ui.js triggern
             if (AppState.cprMode === '30:2' || AppState.cprMode === '15:2') {
                  if (window.CPR.UI && typeof window.CPR.UI.handleCprToVentilation === 'function') {
                      window.CPR.UI.handleCprToVentilation();
@@ -793,13 +774,12 @@ document.addEventListener('DOMContentLoaded', function() {
             AppState.isCompressing = true;
             addLogEntry("Kompression fortgesetzt");
             
-            // CPR Timer Helper sauber resetten bei Start
             const badge = document.getElementById('cpr-counter-badge');
             if (badge) {
                 badge.innerText = "0";
                 badge.classList.add('hidden');
             }
-            if (window.CPR.UI) window.CPR.UI._cprCount = 0; // Interner counter reset
+            if (window.CPR.UI) window.CPR.UI._cprCount = 0; 
             
             switchState('COMPRESSING');
         }
@@ -829,17 +809,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 Globals.tempAirwayType = short;
                 
                 if (short === 'Beutel-Maske') {
-                    // NATIVES BVM ROUTING:
                     AppState.airwayEstablished = true;
-                    AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; // Erzwungener Modus
-                    UI.updateModeToggle(); // UI Slider anpassen
+                    AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
+                    UI.updateModeToggle(); 
                     
-                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); // Edit ausblenden
-                    document.getElementById('btn-airway-remove')?.classList.remove('hidden'); // Entfernen einblenden
+                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); 
+                    document.getElementById('btn-airway-remove')?.classList.remove('hidden'); 
                     
                     addLogEntry("Atemweg: Beutel-Maske");
                     
-                    // Modus umschalten, damit Timer richtig laufen
                     if (AppState.state === 'PAUSED_CPR') switchState('PAUSED_CPR'); 
                     else switchState('COMPRESSING');
                     
@@ -891,7 +869,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('aw-depth').value = '';
         document.getElementById('airway-label').innerText = 'Atemweg';
         
-        // Zurück auf 30:2
         AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2';
         UI.updateModeToggle();
         
@@ -922,7 +899,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('btn-zugang-save')?.addEventListener('click', () => {
         Utils.vibrate(30);
         const typ = document.getElementById('zugang-typ').value;
-        const groesse = document.getElementById('zugang-groesse').value.split(' ')[0]; // Nur Farbe
+        const groesse = document.getElementById('zugang-groesse').value.split(' ')[0]; 
         const ort = document.getElementById('zugang-ort').value;
         
         let logStr = `Zugang: ${typ} ${groesse} (${ort})`;
@@ -1012,7 +989,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const last = AppState.protocolData.pop();
             Utils.sysLog("Undo: " + last.action);
             
-            // Wenn Amiodaron storniert wird, Zähler reduzieren!
             if (last.action.includes('Amiodaron')) {
                 if (AppState.amioCount > 0) AppState.amioCount--;
                 if (window.CPR.UI && typeof window.CPR.UI.updateSmartMedsButton === 'function') {
@@ -1039,7 +1015,6 @@ document.addEventListener('DOMContentLoaded', function() {
             onIcon.classList.add('hidden'); offIcon.classList.remove('hidden');
         }
         
-        // Initialisiere AudioEngine beim ersten Klick (iOS/Android Policy)
         if (AppState.isSoundActive && window.CPR.Audio && window.CPR.Audio.init) {
             window.CPR.Audio.init();
         }
@@ -1099,11 +1074,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('debriefing-modal').classList.add('hidden');
         document.getElementById('debriefing-modal').classList.remove('flex');
         
-        // Wir gehen zurück in den ROSC Screen (oder COMPRESSING falls manuell getriggert)
         if (AppState.protocolData[AppState.protocolData.length-1].action.includes('ROSC')) {
             switchState('ROSC');
         } else {
-             // War ein Abbruch/Ende aus der laufenden CPR heraus
              AppState.isCompressing = false;
              switchState('PAUSED_CPR');
         }
@@ -1124,7 +1097,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // =========================================================
     function checkRecovery() {
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('reset')) return; // Kein Restore nach hard reset
+        if (urlParams.has('reset')) return; 
 
         const saved = Utils.safeGetItem('cpr_assist_session');
         if (saved) {
@@ -1143,7 +1116,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         Utils.sysLog("Session Recovery gestartet.");
                         Object.assign(AppState, session);
                         
-                        // Zeitreise: Berechne die verpassten Sekunden
                         const diffSec = Math.floor(diffMs / 1000);
                         AppState.totalSeconds += diffSec;
                         AppState.arrestSeconds += diffSec;
@@ -1179,14 +1151,12 @@ document.addEventListener('DOMContentLoaded', function() {
                              }
                         }
 
-                        // UI Setup
                         UI.updateModeToggle();
                         if (AppState.isSoundActive) {
                             document.getElementById('icon-sound-on').classList.remove('hidden');
                             document.getElementById('icon-sound-off').classList.add('hidden');
                         }
 
-                        // Module neu triggern
                         if (window.CPR.Checklists && typeof window.CPR.Checklists.restore === 'function') {
                             window.CPR.Checklists.restore();
                         }
@@ -1199,8 +1169,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         requestWakeLock();
                         startMainTick();
                         
-                        // Direkter Sprung in den letzten Status
-                        if(AppState.state === 'PAUSED_CPR') AppState.isCompressing = false; // Sicherheit
+                        if(AppState.state === 'PAUSED_CPR') AppState.isCompressing = false; 
                         switchState(AppState.state);
                         
                     } else {
