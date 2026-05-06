@@ -1,8 +1,9 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V63 - Clean Architecture)
- * - BUGFIX: 'cloneNode' Überschneidung entfernt! Zerstört keine Listener der app.js mehr.
- * - ARCHITEKTUR: Modul kümmert sich NUR NOCH um die internen Tabs, nicht mehr um das Panel selbst.
+ * CPR Assist - Log Timeline & KPI Stats Modul (V64 - Final Clean Architecture)
+ * - BUGFIX: Globale Event-Delegation (100% sicher, kein Klonen von Elementen!).
+ * - BUGFIX: Modul mischt sich nicht mehr in den Dashboard-Button ein.
  * - FEATURE: Intelligente Stats-Engine aggregiert Behandlungs-KPIs on-the-fly.
+ * - FEATURE: Dynamische Tab-Injektion (KPIs).
  */
 
 window.CPR = window.CPR || {};
@@ -301,8 +302,10 @@ window.CPR.LogTimeline = (function() {
             if (content) {
                 if (id === tab) {
                     content.style.display = 'flex';
+                    content.classList.remove('hidden');
                 } else {
                     content.style.display = 'none';
+                    content.classList.add('hidden');
                 }
             }
         });
@@ -317,29 +320,10 @@ window.CPR.LogTimeline = (function() {
         else if (currentView === 'stats') renderStats();
     }
 
-    // --- BINDE EVENT LISTENER ABSOLUT SICHER (NUR DIE TABS!) ---
-    function bindTabEvents() {
-        const ids = ['list', 'timeline', 'summary', 'stats'];
-        ids.forEach(tabName => {
-            const elId = 'btn-view-' + tabName;
-            const el = document.getElementById(elId);
-            if (el) {
-                // Wir klonen NUR die internen Tabs, niemals externe Buttons wie den Dashboard-Toggle!
-                const newEl = el.cloneNode(true);
-                el.replaceWith(newEl);
-                newEl.addEventListener('click', (e) => {
-                    e.preventDefault(); e.stopPropagation();
-                    if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(20);
-                    switchTab(tabName);
-                });
-            }
-        });
-    }
-
     // --- INITIALISIERUNG & DOM-INJEKTION ---
     function init() {
         try {
-            // KPI Tab injizieren, falls er noch fehlt
+            // 1. KPI Tab injizieren, falls er noch fehlt
             const btnSumm = document.getElementById('btn-view-summary');
             if (btnSumm && btnSumm.parentElement && !document.getElementById('btn-view-stats')) {
                 const tabContainer = btnSumm.parentElement;
@@ -352,21 +336,36 @@ window.CPR.LogTimeline = (function() {
                 tabContainer.appendChild(btnStats);
             }
 
-            // KPI Content injizieren, falls er noch fehlt
+            // 2. KPI Content injizieren, falls er noch fehlt
             const contentSumm = document.getElementById('log-summary-content');
             if (contentSumm && contentSumm.parentElement && !document.getElementById('log-stats-content')) {
                 const contentContainer = contentSumm.parentElement;
                 const divStats = document.createElement('div');
                 divStats.id = 'log-stats-content';
-                divStats.className = 'flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50 w-full';
-                divStats.style.display = 'none'; // Wichtig: Startet ausgeblendet!
+                divStats.className = 'flex-col h-full overflow-y-auto custom-scrollbar bg-slate-50 w-full hidden';
+                divStats.style.display = 'none';
                 contentContainer.appendChild(divStats);
             }
 
-            // Events der internen Reiter bombenfest verdrahten
-            bindTabEvents();
+            // 3. ULTRA-SAFE EVENT DELEGATION (NUR FÜR DIE TABS)
+            // Diese Logik fängt Klicks auf dem gesamten Dokument ab, filtert aber 
+            // messerscharf NUR Klicks auf unsere 4 Tab-Buttons heraus.
+            document.addEventListener('click', function(e) {
+                const tabBtn = e.target.closest('button[id^="btn-view-"]');
+                if (tabBtn) {
+                    const id = tabBtn.id.replace('btn-view-', '');
+                    if (['list', 'timeline', 'summary', 'stats'].includes(id)) {
+                        e.preventDefault(); 
+                        e.stopPropagation();
+                        if (window.CPR && window.CPR.Utils && typeof window.CPR.Utils.vibrate === 'function') {
+                            window.CPR.Utils.vibrate(20);
+                        }
+                        switchTab(id);
+                    }
+                }
+            });
 
-            // Startansicht sichern
+            // 4. Startansicht sichern (wird kurz verzögert, damit DOM bereit ist)
             setTimeout(() => { switchTab('list'); }, 100);
             
         } catch (e) {
@@ -377,14 +376,9 @@ window.CPR.LogTimeline = (function() {
     return { init: init, forceRender: renderCurrentView };
 })();
 
-// Stabiler Autostart (Mit Polling-Sicherung, falls DOM zu langsam ist)
-let initAttempts = 0;
-function safeStart() {
-    if (document.getElementById('btn-view-summary')) {
-        if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init();
-    } else if (initAttempts < 10) {
-        initAttempts++;
-        setTimeout(safeStart, 100);
-    }
-}
-document.addEventListener('DOMContentLoaded', safeStart);
+// Stabiler Autostart
+document.addEventListener('DOMContentLoaded', () => { 
+    setTimeout(() => { 
+        if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init(); 
+    }, 150); 
+});
