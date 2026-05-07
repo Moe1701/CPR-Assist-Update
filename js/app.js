@@ -347,24 +347,50 @@ document.addEventListener('DOMContentLoaded', function() {
         // =========================================================================
         const btnAw = document.getElementById('btn-airway');
 
-        if (!AppState.airwayEstablished) {
-            if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
-                // WARNUNG: Überschreibt den kompletten Button-Inhalt mit hartcodiertem HTML
-                if (btnAw && !btnAw.dataset.isWarning) {
-                    btnAw.dataset.isWarning = "true";
-                    btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
-                    btnAw.classList.remove('border-slate-100');
-                    
-                    btnAw.innerHTML = `
-                        <div class="absolute inset-0 bg-amber-400/20 animate-pulse rounded-[1.5rem]"></div>
-                        <div class="flex flex-col items-center justify-center w-full h-full relative z-10">
-                            <i class="fa-solid fa-lungs text-[26px] mb-1 text-amber-500"></i>
-                            <div class="flex flex-col items-center leading-none mt-0.5">
-                                <span class="text-[12px] font-black text-amber-600 tracking-tighter uppercase">Beatmung?</span>
+        if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
+                // UX-LÖSUNG: 45 Sekunden Schonfrist (Grace Period) für den Atemweg
+                const isGracePeriodOver = (AppState.totalSeconds > 45);
+
+                if (isGracePeriodOver) {
+                    // Nach 45s: Alarm "DOKU FEHLT" poppt auf
+                    if (btnAw && btnAw.dataset.isWarning !== "true") {
+                        btnAw.dataset.isWarning = "true";
+                        // overflow-visible hinzugefügt, damit das "!" nicht abgeschnitten wird
+                        btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
+                        btnAw.classList.remove('border-slate-100');
+                        
+                        btnAw.innerHTML = `
+                            <div class="absolute inset-0 bg-amber-400/20 animate-pulse rounded-full"></div>
+                            <div class="absolute -top-1 -right-1 bg-[#E3000F] text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-md border-2 border-white z-20">!</div>
+                            <div class="flex flex-col items-center justify-center w-full h-full relative z-10">
+                                <i class="fa-solid fa-lungs text-[22px] mb-1 text-amber-500"></i>
+                                <div class="flex flex-col items-center leading-none w-full px-1">
+                                    <span class="text-[10px] font-black text-amber-700 tracking-tighter uppercase">Atemweg</span>
+                                    <span class="text-[8px] font-black text-white bg-amber-500 uppercase tracking-widest mt-1 px-1.5 py-0.5 rounded shadow-sm border border-amber-600">Doku Fehlt</span>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    }
+                } else {
+                    // In den ersten 45s: Standard-Design (Grau, ruhig, passiv) sicherstellen
+                    if (btnAw && btnAw.dataset.isWarning === "true") {
+                        delete btnAw.dataset.isWarning;
+                        btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
+                        btnAw.classList.add('border-slate-100');
+                        
+                        btnAw.innerHTML = `
+                            <div id="aw-glow-bg" class="absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500 opacity-0"></div>
+                            <div id="airway-countdown-badge" class="hidden absolute top-0 right-0 -mt-2 -mr-2 bg-slate-800 text-white text-[10px] font-black rounded-full w-6 h-6 items-center justify-center border-2 border-white shadow-sm z-20 transition-all duration-300 transform scale-110"></div>
+                            <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                                <i id="aw-icon" class="fa-solid fa-lungs text-[26px] mb-1 text-slate-400 transition-colors duration-300"></i>
+                                <div class="flex flex-col items-center leading-none mt-0.5 max-w-[85px] px-1 overflow-hidden">
+                                    <span id="airway-label" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter truncate w-full text-center transition-colors">Atemweg</span>
+                                </div>
+                            </div>
+                        `;
+                    }
                 }
+            }
             } else {
                 // IDLE: Grauer Standard (Aber mit unserem schönen Icon)
                 if (btnAw && btnAw.dataset.isWarning) {
