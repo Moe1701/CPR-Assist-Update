@@ -370,6 +370,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                             </div>
                         `;
+                       }
                     }
                 } else {
                     // In den ersten 45s: Standard-Design (Grau, ruhig, passiv) sicherstellen
