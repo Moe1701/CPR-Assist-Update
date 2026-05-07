@@ -390,8 +390,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         `;
                     }
-                }
-            } else {
+                  }
+             } else {
                 // IDLE: Grauer Standard (Aber mit unserem schönen Icon)
                 if (btnAw && btnAw.dataset.isWarning) {
                     delete btnAw.dataset.isWarning;
