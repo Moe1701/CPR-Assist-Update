@@ -1,5 +1,5 @@
 // Version v37 - Neues Plug-In für Beutel-Maske hinzugefügt
-const CACHE_NAME = 'cpr-assist-v62';
+const CACHE_NAME = 'cpr-assist-v63';
 
 // Exakte Pfade mit Beachtung von Unterordnern und Dateiendungen!
 const ASSETS_TO_CACHE = [
