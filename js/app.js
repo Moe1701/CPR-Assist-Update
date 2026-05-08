@@ -347,7 +347,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // =========================================================================
         const btnAw = document.getElementById('btn-airway');
 
-        if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
+        if (!AppState.airwayEstablished) {
+            if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
                 // UX-LÖSUNG: 45 Sekunden Schonfrist (Grace Period) für den Atemweg
                 const isGracePeriodOver = (AppState.totalSeconds > 45);
 
@@ -355,7 +356,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Nach 45s: Alarm "DOKU FEHLT" poppt auf
                     if (btnAw && btnAw.dataset.isWarning !== "true") {
                         btnAw.dataset.isWarning = "true";
-                        // overflow-visible hinzugefügt, damit das "!" nicht abgeschnitten wird
                         btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
                         btnAw.classList.remove('border-slate-100');
                         
@@ -370,12 +370,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                             </div>
                         `;
-                       }
                     }
                 } else {
                     // In den ersten 45s: Standard-Design (Grau, ruhig, passiv) sicherstellen
-                    if (btnAw && btnAw.dataset.isWarning === "true") {
-                        delete btnAw.dataset.isWarning;
+                    if (btnAw && btnAw.dataset.isWarning !== "grace") {
+                        btnAw.dataset.isWarning = "grace";
                         btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
                         btnAw.classList.add('border-slate-100');
                         
@@ -390,12 +389,12 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         `;
                     }
-                  }
-             } else {
-                // IDLE: Grauer Standard (Aber mit unserem schönen Icon)
+                }
+            } else {
+                // IDLE: Grauer Standard
                 if (btnAw && btnAw.dataset.isWarning) {
                     delete btnAw.dataset.isWarning;
-                    btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+                    btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
                     btnAw.classList.add('border-slate-100');
                     
                     btnAw.innerHTML = `
@@ -411,10 +410,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         } else {
-            // ATEMWEG ETABLIERT: Setzt das normale Layout zurück (mit dem gespeicherten Atemweg-Namen)
+            // ATEMWEG ETABLIERT:
             if (btnAw && btnAw.dataset.isWarning) {
                 delete btnAw.dataset.isWarning;
-                btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+                btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
                 btnAw.classList.add('border-slate-100');
                 
                 const currentLabel = Globals.tempAirwayType || "Atemweg";
