@@ -1,8 +1,9 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V65 - Autonomous Architecture)
+ * CPR Assist - Log Timeline & KPI Stats Modul (V66 - Medical Clean White)
+ * - FEATURE: Neues "STATISTIK" Dashboard für das medizinische Debriefing.
+ * - ENGINE: Berechnet On-The-Fly CCF, Gesamt Hands-Off, längste Pause, Adrenalin-Intervalle & Atemweg-Timings.
+ * - UX: Clean Medical White Design mit dezenten Farbakzenten.
  * - BUGFIX: Dynamische Erstellung aller Container löst das DOM-Injektions-Problem.
- * - FEATURE: Intelligente Stats-Engine aggregiert Behandlungs-KPIs on-the-fly.
- * - BUGFIX: Globale Event-Delegation für absolut sichere Tab-Wechsel.
  */
 
 window.CPR = window.CPR || {};
@@ -76,7 +77,7 @@ window.CPR.LogTimeline = (function() {
         renderCurrentView();
     }
 
-    // --- 3. DIE VIEWS ---
+    // --- 3. DIE VIEWS (LIST, TIMELINE, SUMMARY) ---
     
     function renderList() {
         const container = document.getElementById('log-list-content');
@@ -88,7 +89,7 @@ window.CPR.LogTimeline = (function() {
             return; 
         }
         
-        let html = '<div class="flex flex-col p-2 gap-1">';
+        let html = '<div class="flex flex-col p-2 gap-1 pb-10">';
         data.forEach(item => {
             const relTime = window.CPR.Utils.formatRelative(item.secondsFromStart);
             html += `
@@ -118,7 +119,7 @@ window.CPR.LogTimeline = (function() {
             return; 
         }
         
-        let html = '<div class="flex flex-col p-4 relative">';
+        let html = '<div class="flex flex-col p-4 relative pb-10">';
         // Vertikaler Strich
         html += '<div class="absolute left-8 top-4 bottom-4 w-0.5 bg-slate-200"></div>';
         
@@ -223,34 +224,55 @@ window.CPR.LogTimeline = (function() {
         container.innerHTML = html;
     }
 
-    // --- 4. NEU: KPI DASHBOARD (Die gescheiterte Funktion ausgebaut!) ---
+    // --- 4. DAS NEUE "STATISTIK" DASHBOARD (Clean Medical White) ---
     function renderStats() {
         const container = document.getElementById('log-stats-content');
         if (!container) return;
 
-        const data = window.CPR.AppState?.protocolData || [];
+        const state = window.CPR.AppState || {};
+        const data = state.protocolData || [];
+        
         if (data.length === 0) {
-            container.innerHTML = '<div class="p-4 text-center text-slate-400 text-xs font-bold mt-10">Daten für KPIs sammeln...</div>';
+            container.innerHTML = '<div class="p-4 text-center text-slate-400 text-xs font-bold mt-10">Daten für die Auswertung sammeln...</div>';
             return;
         }
 
-        let firstCPR = null, firstAirway = null, firstShock = null, firstAdr = null, firstAccess = null;
-        let pauses = [];
-        let currentPauseStart = null;
-        let analyses = [];
+        // Grundwerte (Pausen & Dauer)
+        const totalSec = state.totalSeconds || 0;
+        const arrestSec = state.arrestSeconds || 0;
+        const compSec = state.compressingSeconds || 0;
+        const ccf = arrestSec > 0 ? Math.min(100, Math.round((compSec / arrestSec) * 100)) : 0;
+        const totalHandsOff = Math.max(0, arrestSec - compSec);
 
+        // Tracker für Milestones
+        let firstCPR = null, firstShock = null, firstAdr = null, firstAccess = null;
+        let firstAirway = null, definitiveAirway = null;
+        let adrTimes = [], analyses = [];
+        let pauses = [], currentPauseStart = null;
+
+        // Logbuch 1x komplett durchlaufen (High Performance)
         data.forEach(d => {
             const t = d.action.toLowerCase();
             const sec = d.secondsFromStart;
 
-            // Meilensteine abfangen
+            // Erste Maßnahmen
             if (!firstCPR && (t.includes('start rea') || t.includes('kompression begonnen'))) firstCPR = sec;
-            if (!firstAirway && t.includes('atemweg:') && !t.includes('entfernt')) firstAirway = sec;
             if (!firstShock && t.includes('schock abgegeben')) firstShock = sec;
             if (!firstAdr && t.includes('adrenalin')) firstAdr = sec;
             if (!firstAccess && t.includes('zugang:')) firstAccess = sec;
 
-            // Pausen-Berechnung
+            // Atemwegs-Eskalation
+            if (t.includes('atemweg:') && !t.includes('entfernt')) {
+                const awType = d.action.split(':')[1]?.split('(')[0]?.trim() || 'Unbekannt';
+                if (!firstAirway) firstAirway = { time: sec, type: awType };
+                if (!t.includes('beutel-maske') && !definitiveAirway) definitiveAirway = { time: sec, type: awType };
+            }
+
+            // Intervalle speichern
+            if (t.includes('adrenalin')) adrTimes.push(sec);
+            if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) analyses.push(sec);
+
+            // Pausen exakt mitloggen
             if ((t.includes('kompression') || t.includes('cpr')) && (t.includes('paus') || t.includes('stop') || t.includes('unterbroch'))) {
                 if (currentPauseStart === null) currentPauseStart = sec;
             } else if ((t.includes('kompression') || t.includes('cpr')) && (t.includes('fortgesetzt') || t.includes('start') || t.includes('weiter'))) {
@@ -259,72 +281,114 @@ window.CPR.LogTimeline = (function() {
                     currentPauseStart = null;
                 }
             }
-
-            // Intervalle sammeln
-            if (t.includes('rhythmusanalyse') || t.includes('schockbar')) {
-                analyses.push(sec);
-            }
         });
 
-        // Mathematik
-        let maxPause = pauses.length > 0 ? Math.max(...pauses) : 0;
-        let avgPause = pauses.length > 0 ? Math.round(pauses.reduce((a, b) => a + b, 0) / pauses.length) : 0;
-
-        let analysisIntervals = [];
-        for (let i = 1; i < analyses.length; i++) {
-            analysisIntervals.push(analyses[i] - analyses[i-1]);
+        // Laufende Pause am Ende (falls CPR gerade pausiert ist)
+        if (currentPauseStart !== null && totalSec > currentPauseStart) {
+            pauses.push(totalSec - currentPauseStart);
         }
-        let avgAnalysisInterval = analysisIntervals.length > 0 ? Math.round(analysisIntervals.reduce((a, b) => a + b, 0) / analysisIntervals.length) : 0;
 
+        // Mathematische Auswertung
         const format = window.CPR.Utils.formatTime;
-
-        // Rendern
-        let html = '<div class="p-4 flex flex-col gap-3 pb-12">';
-
-        html += `<h3 class="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-2 mb-1">Time to... (ab Start)</h3>`;
-        html += buildStatRow('1. Kompression', firstCPR !== null ? format(firstCPR) : '--:--', 'fa-hands-asl-interpreting');
-        html += buildStatRow('1. Schock', firstShock !== null ? format(firstShock) : '--:--', 'fa-bolt', 'text-amber-500');
-        html += buildStatRow('Atemweg', firstAirway !== null ? format(firstAirway) : '--:--', 'fa-lungs', 'text-cyan-500');
-        html += buildStatRow('Zugang', firstAccess !== null ? format(firstAccess) : '--:--', 'fa-droplet', 'text-indigo-500');
-        html += buildStatRow('1. Adrenalin', firstAdr !== null ? format(firstAdr) : '--:--', 'fa-syringe', 'text-[#E3000F]');
-
-        html += `<h3 class="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-2 mb-1 mt-4">Performance Insights</h3>`;
-        html += buildStatRow('Längste Pause', maxPause > 0 ? maxPause + ' s' : '0 s', 'fa-pause', maxPause > 10 ? 'text-[#E3000F]' : 'text-emerald-500');
-        html += buildStatRow('Ø Pausen-Dauer', avgPause > 0 ? avgPause + ' s' : '0 s', 'fa-stopwatch', avgPause > 10 ? 'text-[#E3000F]' : 'text-emerald-500');
-        html += buildStatRow('Ø Analyse-Intervall', avgAnalysisInterval > 0 ? format(avgAnalysisInterval) : '--:--', 'fa-heart-pulse');
+        const maxPause = pauses.length > 0 ? Math.max(...pauses) : 0;
         
-        html += '</div>';
+        let adrIntervals = [];
+        for (let i = 1; i < adrTimes.length; i++) adrIntervals.push(adrTimes[i] - adrTimes[i-1]);
+        const avgAdrInt = adrIntervals.length > 0 ? Math.round(adrIntervals.reduce((a, b) => a + b, 0) / adrIntervals.length) : 0;
 
+        let anaIntervals = [];
+        for (let i = 1; i < analyses.length; i++) anaIntervals.push(analyses[i] - analyses[i-1]);
+        const avgAnaInt = anaIntervals.length > 0 ? Math.round(anaIntervals.reduce((a, b) => a + b, 0) / anaIntervals.length) : 0;
+
+        // --- HTML GENERIERUNG (CLEAN MEDICAL WHITE) ---
+        let html = '<div class="p-4 flex flex-col gap-4 pb-12">';
+
+        // 1. CPR PERFORMANCE (Der CCF-Block)
+        const ccfColor = ccf >= 80 ? 'text-emerald-500' : 'text-[#E3000F]';
+        html += `
+            <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center border-b border-slate-50 pb-2">CPR Performance</h3>
+                <div class="flex items-center justify-between">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">CCF (CPR-Anteil)</span>
+                        <span class="text-4xl font-black ${ccfColor} tracking-tighter">${ccf}%</span>
+                    </div>
+                    <div class="w-px h-10 bg-slate-100 mx-2"></div>
+                    <div class="flex flex-col text-right">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Hands-Off Gesamt</span>
+                        <span class="text-xl font-black text-slate-700 tracking-tight">${format(totalHandsOff)} <span class="text-xs text-slate-400">Min</span></span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Hilfsfunktion für kleine Kacheln
+        const renderRow = (label, val, icon, colorClass = 'text-slate-400') => `
+            <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid ${icon} ${colorClass} text-base w-5 text-center"></i>
+                    <span class="text-[11px] font-bold text-slate-600">${label}</span>
+                </div>
+                <span class="text-sm font-black text-slate-800 tracking-wide">${val}</span>
+            </div>
+        `;
+
+        // 2. THERAPIE-INTERVALLE
+        html += `
+            <div>
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Therapie-Intervalle</h3>
+                <div class="flex flex-col gap-1.5">
+                    ${renderRow('Ø Adrenalin-Intervall', avgAdrInt > 0 ? format(avgAdrInt) : '--:--', 'fa-syringe', 'text-[#E3000F]')}
+                    ${renderRow('Ø Rhythmus-Analyse', avgAnaInt > 0 ? format(avgAnaInt) : '--:--', 'fa-heart-pulse', 'text-amber-500')}
+                    ${renderRow('Längste CPR Pause', maxPause > 0 ? maxPause + ' s' : '0 s', 'fa-pause', maxPause > 10 ? 'text-[#E3000F]' : 'text-emerald-500')}
+                </div>
+            </div>
+        `;
+
+        // 3. ATEMWEGS-MANAGEMENT
+        html += `
+            <div>
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Atemwegs-Management</h3>
+                <div class="flex flex-col gap-1.5">
+                    ${renderRow('1. Maßnahme (' + (firstAirway ? firstAirway.type : '-') + ')', firstAirway ? format(firstAirway.time) : '--:--', 'fa-lungs', 'text-cyan-500')}
+                    ${renderRow('Sicherung (' + (definitiveAirway ? definitiveAirway.type : '-') + ')', definitiveAirway ? format(definitiveAirway.time) : '--:--', 'fa-check-double', 'text-emerald-500')}
+                </div>
+            </div>
+        `;
+
+        // 4. REAKTIONSZEITEN
+        html += `
+            <div>
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Reaktionszeiten (ab Start)</h3>
+                <div class="grid grid-cols-2 gap-1.5">
+                    ${renderRow('1. Kompression', firstCPR !== null ? format(firstCPR) : '--:--', 'fa-hands-asl-interpreting', 'text-emerald-500')}
+                    ${renderRow('1. Schock', firstShock !== null ? format(firstShock) : '--:--', 'fa-bolt', 'text-amber-500')}
+                    ${renderRow('1. Adrenalin', firstAdr !== null ? format(firstAdr) : '--:--', 'fa-syringe', 'text-[#E3000F]')}
+                    ${renderRow('1. Zugang', firstAccess !== null ? format(firstAccess) : '--:--', 'fa-droplet', 'text-indigo-500')}
+                </div>
+            </div>
+        `;
+
+        html += '</div>';
         container.innerHTML = html;
     }
 
-    function buildStatRow(label, value, icon, iconColorClass = 'text-slate-400') {
-        return `
-            <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                <div class="flex items-center gap-3">
-                    <i class="fa-solid ${icon} ${iconColorClass} text-lg w-6 text-center"></i>
-                    <span class="text-[11px] font-bold text-slate-600 uppercase tracking-wide">${label}</span>
-                </div>
-                <span class="text-sm font-black text-slate-800">${value}</span>
-            </div>
-        `;
-    }
 
     // --- 5. INITIALISIERUNG & DOM-INJEKTION ---
     function init() {
         try {
-            // A. KPI Tab (Button) injizieren, falls er noch fehlt
+            // A. KPI Tab in STATISTIK umbenennen
             const btnSumm = document.getElementById('btn-view-summary');
             if (btnSumm && btnSumm.parentElement && !document.getElementById('btn-view-stats')) {
                 const tabContainer = btnSumm.parentElement;
                 const btnStats = document.createElement('button');
                 btnStats.id = 'btn-view-stats';
                 btnStats.className = 'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-slate-500 transition-all';
-                btnStats.innerText = 'KPIs';
+                btnStats.innerText = 'Statistik'; // 🌟 NEUER NAME 🌟
                 tabContainer.appendChild(btnStats);
             }
 
-            // B. ALLE 4 Content-Container in protocol-list injizieren, falls sie fehlen!
+            // B. ALLE 4 Content-Container in protocol-list injizieren
             const mainListContainer = document.getElementById('protocol-list');
             if (mainListContainer) {
                 ['list', 'timeline', 'summary', 'stats'].forEach(id => {
@@ -339,7 +403,7 @@ window.CPR.LogTimeline = (function() {
                 });
             }
 
-            // C. ULTRA-SAFE EVENT DELEGATION (NUR FÜR DIE TABS)
+            // C. ULTRA-SAFE EVENT DELEGATION
             document.addEventListener('click', function(e) {
                 const tabBtn = e.target.closest('button[id^="btn-view-"]');
                 if (tabBtn) {
@@ -355,7 +419,7 @@ window.CPR.LogTimeline = (function() {
                 }
             });
 
-            // D. Startansicht sichern (wird kurz verzögert, damit DOM komplett bereit ist)
+            // D. Startansicht sichern
             setTimeout(() => { switchTab('list'); }, 100);
             
         } catch (e) {
