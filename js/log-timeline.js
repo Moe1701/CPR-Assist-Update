@@ -1,9 +1,8 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V67 - Advanced Therapy Metrics)
+ * CPR Assist - Log Timeline & KPI Stats Modul (V68 - SAMPLER Alter/Gewicht Integration)
  * - FEATURE: Neues "STATISTIK" Dashboard für das medizinische Debriefing.
  * - ENGINE: Berechnet On-The-Fly CCF, Pre-Shock Pausen (Min/Max/Ø), Amiodaron-Intervalle, Gesamt-Joule und Zeit bis ROSC.
- * - UX: Clean Medical White Design mit thematischen Blöcken.
- * - BUGFIX: Dynamische Erstellung aller Container löst das DOM-Injektions-Problem.
+ * - UX: Manuell erfasstes Alter und Gewicht aus der Anamnese wird nahtlos in die SBAR Übersicht injiziert.
  */
 
 window.CPR = window.CPR || {};
@@ -11,7 +10,6 @@ window.CPR = window.CPR || {};
 window.CPR.LogTimeline = (function() {
     let currentView = 'list'; 
     
-    // --- 1. ICON LOGIK ---
     function getIconData(txt) {
         if (!txt) return { icon: '•', color: 'text-slate-400', bg: 'bg-slate-100' };
         const t = txt.toLowerCase();
@@ -37,7 +35,6 @@ window.CPR.LogTimeline = (function() {
         return { icon: '🔹', type: 'default', color: 'text-slate-400', bg: 'bg-slate-100' };
     }
 
-    // --- 2. RENDER STEUERUNG ---
     function renderCurrentView() {
         if (currentView === 'list') renderList();
         else if (currentView === 'timeline') renderTimeline();
@@ -48,7 +45,6 @@ window.CPR.LogTimeline = (function() {
     function switchTab(tabId) {
         currentView = tabId;
 
-        // Button UI anpassen
         ['list', 'timeline', 'summary', 'stats'].forEach(id => {
             const btn = document.getElementById(`btn-view-${id}`);
             if (btn) {
@@ -60,7 +56,6 @@ window.CPR.LogTimeline = (function() {
             }
         });
 
-        // Container Sichtbarkeit steuern
         ['list', 'timeline', 'summary', 'stats'].forEach(id => {
             const content = document.getElementById(`log-${id}-content`);
             if (content) {
@@ -77,8 +72,6 @@ window.CPR.LogTimeline = (function() {
         renderCurrentView();
     }
 
-    // --- 3. DIE VIEWS (LIST, TIMELINE, SUMMARY) ---
-    
     function renderList() {
         const container = document.getElementById('log-list-content');
         if (!container) return;
@@ -155,7 +148,16 @@ window.CPR.LogTimeline = (function() {
         const arrSec = state.arrestSeconds || 0;
         const compSec = state.compressingSeconds || 0;
         const ccf = arrSec > 0 ? Math.min(100, Math.round((compSec / arrSec) * 100)) : 0;
-        const ageStr = state.isPediatric ? (state.patientWeight ? `Kind (${state.patientWeight} kg)` : 'Kind') : 'Erwachsener';
+        const aData = state.anamneseData || {};
+
+        // 🌟 NEU: Integriert Alter & Gewicht aus den SAMPLER Leitfragen 🌟
+        let ageStr = state.isPediatric ? (state.patientWeight ? `Kind (${state.patientWeight} kg)` : 'Kind') : 'Erwachsener';
+        if (aData.alter || aData.gewicht) {
+            let zusatz = [];
+            if (aData.alter) zusatz.push(`${aData.alter} J.`);
+            if (aData.gewicht) zusatz.push(`${aData.gewicht} kg`);
+            ageStr += ` (${zusatz.join(' | ')})`;
+        }
         
         let adrTotal = "0 mg", adrCount = state.adrCount || 0;
         if (adrCount > 0) adrTotal = (state.isPediatric && state.patientWeight) ? (adrCount * Math.round(state.patientWeight * 10)) + " µg" : adrCount + " mg";
@@ -173,7 +175,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         </div>`;
 
-        const aData = state.anamneseData || {};
         let sampStr = [];
         if (aData.sampler) {
             const sMap = {s:'S', a:'A', m:'M', p:'P', l:'L', e:'E', r:'R'};
@@ -219,7 +220,6 @@ window.CPR.LogTimeline = (function() {
         container.innerHTML = html;
     }
 
-    // --- 4. DAS ERWEITERTE "STATISTIK" DASHBOARD ---
     function renderStats() {
         const container = document.getElementById('log-stats-content');
         if (!container) return;
@@ -232,14 +232,12 @@ window.CPR.LogTimeline = (function() {
             return;
         }
 
-        // Grundwerte (Pausen & Dauer)
         const totalSec = state.totalSeconds || 0;
         const arrestSec = state.arrestSeconds || 0;
         const compSec = state.compressingSeconds || 0;
         const ccf = arrestSec > 0 ? Math.min(100, Math.round((compSec / arrestSec) * 100)) : 0;
         const totalHandsOff = Math.max(0, arrestSec - compSec);
 
-        // Tracker für Milestones & Intervalle
         let firstCPR = null, firstShock = null, firstAdr = null, firstAccess = null;
         let firstAirway = null, definitiveAirway = null, timeToRosc = null;
         let adrTimes = [], amioTimes = [], analyses = [];
@@ -249,49 +247,41 @@ window.CPR.LogTimeline = (function() {
         let anaToShockIntervals = [];
         let lastAnalysisTime = null;
 
-        // Logbuch 1x komplett durchlaufen (High Performance)
         data.forEach(d => {
             const t = d.action.toLowerCase();
             const sec = d.secondsFromStart;
 
-            // Erste Maßnahmen
             if (!firstCPR && (t.includes('start rea') || t.includes('kompression begonnen'))) firstCPR = sec;
             if (!firstShock && t.includes('schock abgegeben')) firstShock = sec;
             if (!firstAdr && t.includes('adrenalin')) firstAdr = sec;
             if (!firstAccess && t.includes('zugang:')) firstAccess = sec;
             
-            // ROSC
             if (t.includes('rosc') && !t.includes('re-arrest') && timeToRosc === null) timeToRosc = sec;
 
-            // Atemwegs-Eskalation
             if (t.includes('atemweg:') && !t.includes('entfernt')) {
                 const awType = d.action.split(':')[1]?.split('(')[0]?.trim() || 'Unbekannt';
                 if (!firstAirway) firstAirway = { time: sec, type: awType };
                 if (!t.includes('beutel-maske') && !definitiveAirway) definitiveAirway = { time: sec, type: awType };
             }
 
-            // Intervalle & Medikamente
             if (t.includes('adrenalin')) adrTimes.push(sec);
             if (t.includes('amiodaron') || t.includes('amio')) amioTimes.push(sec);
             if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) {
                 analyses.push(sec);
-                lastAnalysisTime = sec; // Start für Pre-Shock Pause
+                lastAnalysisTime = sec; 
             }
 
-            // Defibrillationen & Pre-Shock Pause
             if (t.includes('schock abgegeben')) {
                 shockCountStats++;
                 const match = d.action.match(/(\d+)\s*[jJ]/);
                 if (match) totalJoule += parseInt(match[1], 10);
                 
-                // Hatten wir vorher eine Analyse? Dann Differenz = Pre-Shock Pause
                 if (lastAnalysisTime !== null) {
                     anaToShockIntervals.push(sec - lastAnalysisTime);
                     lastAnalysisTime = null;
                 }
             }
 
-            // Pausen exakt mitloggen
             if ((t.includes('kompression') || t.includes('cpr')) && (t.includes('paus') || t.includes('stop') || t.includes('unterbroch'))) {
                 if (currentPauseStart === null) currentPauseStart = sec;
             } else if ((t.includes('kompression') || t.includes('cpr')) && (t.includes('fortgesetzt') || t.includes('start') || t.includes('weiter'))) {
@@ -302,12 +292,10 @@ window.CPR.LogTimeline = (function() {
             }
         });
 
-        // Laufende Pause am Ende (falls CPR gerade pausiert ist)
         if (currentPauseStart !== null && totalSec > currentPauseStart) {
             pauses.push(totalSec - currentPauseStart);
         }
 
-        // Mathematische Auswertung
         const format = window.CPR.Utils.formatTime;
         const maxPause = pauses.length > 0 ? Math.max(...pauses) : 0;
         
@@ -324,10 +312,8 @@ window.CPR.LogTimeline = (function() {
         const minAnaToShock = anaToShockIntervals.length > 0 ? Math.min(...anaToShockIntervals) : 0;
         const maxAnaToShock = anaToShockIntervals.length > 0 ? Math.max(...anaToShockIntervals) : 0;
 
-        // --- HTML GENERIERUNG (CLEAN MEDICAL WHITE) ---
         let html = '<div class="p-4 flex flex-col gap-4 pb-12">';
 
-        // 1. CPR PERFORMANCE (Der CCF-Block)
         const ccfColor = ccf >= 80 ? 'text-emerald-500' : 'text-[#E3000F]';
         html += `
             <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
@@ -346,7 +332,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // Hilfsfunktion für kleine Kacheln
         const renderRow = (label, val, icon, colorClass = 'text-slate-400', subText = null) => `
             <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                 <div class="flex items-center gap-3">
@@ -360,7 +345,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // 2. SCHOCK-THERAPIE & RHYTHMUS
         const preShockText = avgAnaToShock > 0 ? `${avgAnaToShock} s` : '--';
         const preShockSub = avgAnaToShock > 0 ? `Min: ${minAnaToShock}s | Max: ${maxAnaToShock}s` : null;
         
@@ -376,7 +360,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // 3. MEDIKAMENTE & PAUSEN
         html += `
             <div>
                 <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Medikamente & Intervalle</h3>
@@ -388,7 +371,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // 4. ATEMWEGS-MANAGEMENT
         html += `
             <div>
                 <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Atemwegs-Management</h3>
@@ -399,7 +381,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // 5. REAKTIONSZEITEN
         html += `
             <div>
                 <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Reaktionszeiten (ab Start)</h3>
@@ -417,10 +398,8 @@ window.CPR.LogTimeline = (function() {
     }
 
 
-    // --- 5. INITIALISIERUNG & DOM-INJEKTION ---
     function init() {
         try {
-            // A. KPI Tab in STATISTIK umbenennen
             const btnSumm = document.getElementById('btn-view-summary');
             if (btnSumm && btnSumm.parentElement && !document.getElementById('btn-view-stats')) {
                 const tabContainer = btnSumm.parentElement;
@@ -431,7 +410,6 @@ window.CPR.LogTimeline = (function() {
                 tabContainer.appendChild(btnStats);
             }
 
-            // B. ALLE 4 Content-Container injizieren
             const mainListContainer = document.getElementById('protocol-list');
             if (mainListContainer) {
                 ['list', 'timeline', 'summary', 'stats'].forEach(id => {
@@ -446,7 +424,6 @@ window.CPR.LogTimeline = (function() {
                 });
             }
 
-            // C. ULTRA-SAFE EVENT DELEGATION
             document.addEventListener('click', function(e) {
                 const tabBtn = e.target.closest('button[id^="btn-view-"]');
                 if (tabBtn) {
@@ -462,7 +439,6 @@ window.CPR.LogTimeline = (function() {
                 }
             });
 
-            // D. Startansicht sichern
             setTimeout(() => { switchTab('list'); }, 100);
             
         } catch (e) {
@@ -476,7 +452,6 @@ window.CPR.LogTimeline = (function() {
     };
 })();
 
-// Stabiler Autostart
 document.addEventListener('DOMContentLoaded', () => { 
     setTimeout(() => { 
         if (window.CPR && window.CPR.LogTimeline) window.CPR.LogTimeline.init(); 
