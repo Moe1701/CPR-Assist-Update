@@ -1,8 +1,8 @@
 /**
- * CPR Assist - Log Timeline & KPI Stats Modul (V66 - Medical Clean White)
+ * CPR Assist - Log Timeline & KPI Stats Modul (V67 - Advanced Therapy Metrics)
  * - FEATURE: Neues "STATISTIK" Dashboard für das medizinische Debriefing.
- * - ENGINE: Berechnet On-The-Fly CCF, Gesamt Hands-Off, längste Pause, Adrenalin-Intervalle & Atemweg-Timings.
- * - UX: Clean Medical White Design mit dezenten Farbakzenten.
+ * - ENGINE: Berechnet On-The-Fly CCF, Pre-Shock Pausen (Min/Max/Ø), Amiodaron-Intervalle, Gesamt-Joule und Zeit bis ROSC.
+ * - UX: Clean Medical White Design mit thematischen Blöcken.
  * - BUGFIX: Dynamische Erstellung aller Container löst das DOM-Injektions-Problem.
  */
 
@@ -120,7 +120,6 @@ window.CPR.LogTimeline = (function() {
         }
         
         let html = '<div class="flex flex-col p-4 relative pb-10">';
-        // Vertikaler Strich
         html += '<div class="absolute left-8 top-4 bottom-4 w-0.5 bg-slate-200"></div>';
         
         data.forEach(item => {
@@ -165,7 +164,6 @@ window.CPR.LogTimeline = (function() {
 
         let html = `<div class="p-4 flex flex-col gap-4 pb-12">`;
         
-        // S - Situation
         html += `<div class="bg-white rounded-xl border-l-4 border-[#E3000F] p-3 shadow-sm">
             <h4 class="text-[10px] font-black text-[#E3000F] uppercase tracking-widest mb-2">S - Situation</h4>
             <div class="grid grid-cols-2 gap-2">
@@ -175,7 +173,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         </div>`;
 
-        // B - Background
         const aData = state.anamneseData || {};
         let sampStr = [];
         if (aData.sampler) {
@@ -192,7 +189,6 @@ window.CPR.LogTimeline = (function() {
             ${sampStr.length > 0 ? `<div class="mt-2 text-[10px] leading-tight text-slate-600 space-y-1 pt-2 border-t border-slate-100">${sampStr.join('<br>')}</div>` : ''}
         </div>`;
 
-        // A - Assessment
         let hitsArr = [];
         if (state.protocolData) hitsArr = state.protocolData.filter(d => d.action.includes('HITS: ')).map(h => h.action.replace('HITS: ', ''));
         
@@ -208,7 +204,6 @@ window.CPR.LogTimeline = (function() {
             </div>
         </div>`;
 
-        // R - Response
         html += `<div class="bg-white rounded-xl border-l-4 border-emerald-500 p-3 shadow-sm">
             <h4 class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">R - Response</h4>
             <div class="grid grid-cols-1 gap-1.5 text-[10px]">
@@ -224,7 +219,7 @@ window.CPR.LogTimeline = (function() {
         container.innerHTML = html;
     }
 
-    // --- 4. DAS NEUE "STATISTIK" DASHBOARD (Clean Medical White) ---
+    // --- 4. DAS ERWEITERTE "STATISTIK" DASHBOARD ---
     function renderStats() {
         const container = document.getElementById('log-stats-content');
         if (!container) return;
@@ -244,11 +239,15 @@ window.CPR.LogTimeline = (function() {
         const ccf = arrestSec > 0 ? Math.min(100, Math.round((compSec / arrestSec) * 100)) : 0;
         const totalHandsOff = Math.max(0, arrestSec - compSec);
 
-        // Tracker für Milestones
+        // Tracker für Milestones & Intervalle
         let firstCPR = null, firstShock = null, firstAdr = null, firstAccess = null;
-        let firstAirway = null, definitiveAirway = null;
-        let adrTimes = [], analyses = [];
+        let firstAirway = null, definitiveAirway = null, timeToRosc = null;
+        let adrTimes = [], amioTimes = [], analyses = [];
         let pauses = [], currentPauseStart = null;
+        let totalJoule = 0, shockCountStats = 0;
+        
+        let anaToShockIntervals = [];
+        let lastAnalysisTime = null;
 
         // Logbuch 1x komplett durchlaufen (High Performance)
         data.forEach(d => {
@@ -260,6 +259,9 @@ window.CPR.LogTimeline = (function() {
             if (!firstShock && t.includes('schock abgegeben')) firstShock = sec;
             if (!firstAdr && t.includes('adrenalin')) firstAdr = sec;
             if (!firstAccess && t.includes('zugang:')) firstAccess = sec;
+            
+            // ROSC
+            if (t.includes('rosc') && !t.includes('re-arrest') && timeToRosc === null) timeToRosc = sec;
 
             // Atemwegs-Eskalation
             if (t.includes('atemweg:') && !t.includes('entfernt')) {
@@ -268,9 +270,26 @@ window.CPR.LogTimeline = (function() {
                 if (!t.includes('beutel-maske') && !definitiveAirway) definitiveAirway = { time: sec, type: awType };
             }
 
-            // Intervalle speichern
+            // Intervalle & Medikamente
             if (t.includes('adrenalin')) adrTimes.push(sec);
-            if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) analyses.push(sec);
+            if (t.includes('amiodaron') || t.includes('amio')) amioTimes.push(sec);
+            if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) {
+                analyses.push(sec);
+                lastAnalysisTime = sec; // Start für Pre-Shock Pause
+            }
+
+            // Defibrillationen & Pre-Shock Pause
+            if (t.includes('schock abgegeben')) {
+                shockCountStats++;
+                const match = d.action.match(/(\d+)\s*[jJ]/);
+                if (match) totalJoule += parseInt(match[1], 10);
+                
+                // Hatten wir vorher eine Analyse? Dann Differenz = Pre-Shock Pause
+                if (lastAnalysisTime !== null) {
+                    anaToShockIntervals.push(sec - lastAnalysisTime);
+                    lastAnalysisTime = null;
+                }
+            }
 
             // Pausen exakt mitloggen
             if ((t.includes('kompression') || t.includes('cpr')) && (t.includes('paus') || t.includes('stop') || t.includes('unterbroch'))) {
@@ -292,13 +311,18 @@ window.CPR.LogTimeline = (function() {
         const format = window.CPR.Utils.formatTime;
         const maxPause = pauses.length > 0 ? Math.max(...pauses) : 0;
         
-        let adrIntervals = [];
-        for (let i = 1; i < adrTimes.length; i++) adrIntervals.push(adrTimes[i] - adrTimes[i-1]);
+        let adrIntervals = []; for (let i = 1; i < adrTimes.length; i++) adrIntervals.push(adrTimes[i] - adrTimes[i-1]);
         const avgAdrInt = adrIntervals.length > 0 ? Math.round(adrIntervals.reduce((a, b) => a + b, 0) / adrIntervals.length) : 0;
 
-        let anaIntervals = [];
-        for (let i = 1; i < analyses.length; i++) anaIntervals.push(analyses[i] - analyses[i-1]);
+        let amioIntervals = []; for (let i = 1; i < amioTimes.length; i++) amioIntervals.push(amioTimes[i] - amioTimes[i-1]);
+        const avgAmioInt = amioIntervals.length > 0 ? Math.round(amioIntervals.reduce((a, b) => a + b, 0) / amioIntervals.length) : 0;
+
+        let anaIntervals = []; for (let i = 1; i < analyses.length; i++) anaIntervals.push(analyses[i] - analyses[i-1]);
         const avgAnaInt = anaIntervals.length > 0 ? Math.round(anaIntervals.reduce((a, b) => a + b, 0) / anaIntervals.length) : 0;
+
+        const avgAnaToShock = anaToShockIntervals.length > 0 ? Math.round(anaToShockIntervals.reduce((a,b)=>a+b,0)/anaToShockIntervals.length) : 0;
+        const minAnaToShock = anaToShockIntervals.length > 0 ? Math.min(...anaToShockIntervals) : 0;
+        const maxAnaToShock = anaToShockIntervals.length > 0 ? Math.max(...anaToShockIntervals) : 0;
 
         // --- HTML GENERIERUNG (CLEAN MEDICAL WHITE) ---
         let html = '<div class="p-4 flex flex-col gap-4 pb-12">';
@@ -323,29 +347,48 @@ window.CPR.LogTimeline = (function() {
         `;
 
         // Hilfsfunktion für kleine Kacheln
-        const renderRow = (label, val, icon, colorClass = 'text-slate-400') => `
+        const renderRow = (label, val, icon, colorClass = 'text-slate-400', subText = null) => `
             <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                 <div class="flex items-center gap-3">
                     <i class="fa-solid ${icon} ${colorClass} text-base w-5 text-center"></i>
-                    <span class="text-[11px] font-bold text-slate-600">${label}</span>
+                    <div class="flex flex-col">
+                        <span class="text-[11px] font-bold text-slate-600 leading-tight">${label}</span>
+                        ${subText ? `<span class="text-[9px] font-bold text-slate-400 leading-none">${subText}</span>` : ''}
+                    </div>
                 </div>
                 <span class="text-sm font-black text-slate-800 tracking-wide">${val}</span>
             </div>
         `;
 
-        // 2. THERAPIE-INTERVALLE
+        // 2. SCHOCK-THERAPIE & RHYTHMUS
+        const preShockText = avgAnaToShock > 0 ? `${avgAnaToShock} s` : '--';
+        const preShockSub = avgAnaToShock > 0 ? `Min: ${minAnaToShock}s | Max: ${maxAnaToShock}s` : null;
+        
         html += `
             <div>
-                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Therapie-Intervalle</h3>
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Rhythmus & Schock-Therapie</h3>
+                <div class="flex flex-col gap-1.5">
+                    ${renderRow('Defibrillationen', shockCountStats > 0 ? `${shockCountStats}x` : '0x', 'fa-bolt', 'text-amber-500', shockCountStats > 0 ? `Gesamt: ${totalJoule} J` : null)}
+                    ${renderRow('Pre-Shock Pause', preShockText, 'fa-stopwatch', 'text-[#E3000F]', preShockSub)}
+                    ${renderRow('Ø Rhythmus-Analyse', avgAnaInt > 0 ? format(avgAnaInt) : '--:--', 'fa-heart-pulse', 'text-amber-500')}
+                    ${renderRow('Zeit bis ROSC', timeToRosc !== null ? format(timeToRosc) : '--:--', 'fa-heart', 'text-emerald-500')}
+                </div>
+            </div>
+        `;
+
+        // 3. MEDIKAMENTE & PAUSEN
+        html += `
+            <div>
+                <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Medikamente & Intervalle</h3>
                 <div class="flex flex-col gap-1.5">
                     ${renderRow('Ø Adrenalin-Intervall', avgAdrInt > 0 ? format(avgAdrInt) : '--:--', 'fa-syringe', 'text-[#E3000F]')}
-                    ${renderRow('Ø Rhythmus-Analyse', avgAnaInt > 0 ? format(avgAnaInt) : '--:--', 'fa-heart-pulse', 'text-amber-500')}
+                    ${renderRow('Ø Amiodaron-Intervall', avgAmioInt > 0 ? format(avgAmioInt) : '--:--', 'fa-pills', 'text-purple-500')}
                     ${renderRow('Längste CPR Pause', maxPause > 0 ? maxPause + ' s' : '0 s', 'fa-pause', maxPause > 10 ? 'text-[#E3000F]' : 'text-emerald-500')}
                 </div>
             </div>
         `;
 
-        // 3. ATEMWEGS-MANAGEMENT
+        // 4. ATEMWEGS-MANAGEMENT
         html += `
             <div>
                 <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Atemwegs-Management</h3>
@@ -356,14 +399,14 @@ window.CPR.LogTimeline = (function() {
             </div>
         `;
 
-        // 4. REAKTIONSZEITEN
+        // 5. REAKTIONSZEITEN
         html += `
             <div>
                 <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2">Reaktionszeiten (ab Start)</h3>
                 <div class="grid grid-cols-2 gap-1.5">
-                    ${renderRow('1. Kompression', firstCPR !== null ? format(firstCPR) : '--:--', 'fa-hands-asl-interpreting', 'text-emerald-500')}
+                    ${renderRow('1. Komp.', firstCPR !== null ? format(firstCPR) : '--:--', 'fa-hands-asl-interpreting', 'text-emerald-500')}
                     ${renderRow('1. Schock', firstShock !== null ? format(firstShock) : '--:--', 'fa-bolt', 'text-amber-500')}
-                    ${renderRow('1. Adrenalin', firstAdr !== null ? format(firstAdr) : '--:--', 'fa-syringe', 'text-[#E3000F]')}
+                    ${renderRow('1. Supra', firstAdr !== null ? format(firstAdr) : '--:--', 'fa-syringe', 'text-[#E3000F]')}
                     ${renderRow('1. Zugang', firstAccess !== null ? format(firstAccess) : '--:--', 'fa-droplet', 'text-indigo-500')}
                 </div>
             </div>
@@ -384,11 +427,11 @@ window.CPR.LogTimeline = (function() {
                 const btnStats = document.createElement('button');
                 btnStats.id = 'btn-view-stats';
                 btnStats.className = 'px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-slate-500 transition-all';
-                btnStats.innerText = 'Statistik'; // 🌟 NEUER NAME 🌟
+                btnStats.innerText = 'Statistik'; 
                 tabContainer.appendChild(btnStats);
             }
 
-            // B. ALLE 4 Content-Container in protocol-list injizieren
+            // B. ALLE 4 Content-Container injizieren
             const mainListContainer = document.getElementById('protocol-list');
             if (mainListContainer) {
                 ['list', 'timeline', 'summary', 'stats'].forEach(id => {
