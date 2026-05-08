@@ -3,6 +3,7 @@
  * - FEATURE: Natives "Beutel-Maske" Routing integriert.
  * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
  * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
+ * - SMART PROMPT (VISUAL HAMMER): Atemwegs-Button pulsiert "Beatmung?" extrem auffällig über innerHTML-Injection!
  * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
  * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
  * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
@@ -340,6 +341,71 @@ document.addEventListener('DOMContentLoaded', function() {
         const handsOffTimer = document.getElementById('cpr-hands-off-timer');
         
         if (Globals.pauseInterval) { clearInterval(Globals.pauseInterval); Globals.pauseInterval = null; }
+
+        // =========================================================================
+        // 🌟 NEU: SMART PROMPT LOGIK (INNER-HTML INJECTION FÜR GARANTIERTE SICHTBARKEIT)
+        // =========================================================================
+        const btnAw = document.getElementById('btn-airway');
+
+        if (!AppState.airwayEstablished) {
+            if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
+                // WARNUNG: Überschreibt den kompletten Button-Inhalt mit hartcodiertem HTML
+                if (btnAw && !btnAw.dataset.isWarning) {
+                    btnAw.dataset.isWarning = "true";
+                    btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+                    btnAw.classList.remove('border-slate-100');
+                    
+                    btnAw.innerHTML = `
+                        <div class="absolute inset-0 bg-amber-400/20 animate-pulse rounded-[1.5rem]"></div>
+                        <div class="flex flex-col items-center justify-center w-full h-full relative z-10">
+                            <i class="fa-solid fa-lungs text-[26px] mb-1 text-amber-500"></i>
+                            <div class="flex flex-col items-center leading-none mt-0.5">
+                                <span class="text-[12px] font-black text-amber-600 tracking-tighter uppercase">Beatmung?</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            } else {
+                // IDLE: Grauer Standard (Aber mit unserem schönen Icon)
+                if (btnAw && btnAw.dataset.isWarning) {
+                    delete btnAw.dataset.isWarning;
+                    btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+                    btnAw.classList.add('border-slate-100');
+                    
+                    btnAw.innerHTML = `
+                        <div id="aw-glow-bg" class="absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500 opacity-0"></div>
+                        <div id="airway-countdown-badge" class="hidden absolute top-0 right-0 -mt-2 -mr-2 bg-slate-800 text-white text-[10px] font-black rounded-full w-6 h-6 items-center justify-center border-2 border-white shadow-sm z-20 transition-all duration-300 transform scale-110"></div>
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <i id="aw-icon" class="fa-solid fa-lungs text-[26px] mb-1 text-slate-400 transition-colors duration-300"></i>
+                            <div class="flex flex-col items-center leading-none mt-0.5 max-w-[85px] px-1 overflow-hidden">
+                                <span id="airway-label" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter truncate w-full text-center transition-colors">Atemweg</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        } else {
+            // ATEMWEG ETABLIERT: Setzt das normale Layout zurück (mit dem gespeicherten Atemweg-Namen)
+            if (btnAw && btnAw.dataset.isWarning) {
+                delete btnAw.dataset.isWarning;
+                btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+                btnAw.classList.add('border-slate-100');
+                
+                const currentLabel = Globals.tempAirwayType || "Atemweg";
+                
+                btnAw.innerHTML = `
+                    <div id="aw-glow-bg" class="absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500 opacity-0"></div>
+                    <div id="airway-countdown-badge" class="hidden absolute top-0 right-0 -mt-2 -mr-2 bg-slate-800 text-white text-[10px] font-black rounded-full w-6 h-6 items-center justify-center border-2 border-white shadow-sm z-20 transition-all duration-300 transform scale-110"></div>
+                    <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                        <i id="aw-icon" class="fa-solid fa-lungs text-[26px] mb-1 text-slate-400 transition-colors duration-300"></i>
+                        <div class="flex flex-col items-center leading-none mt-0.5 max-w-[85px] px-1 overflow-hidden">
+                            <span id="airway-label" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter truncate w-full text-center transition-colors">${currentLabel}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        // =========================================================================
 
         if (btnCpr) {
             btnCpr.classList.remove('bg-amber-50', 'bg-red-50', 'pause-warning', 'animate-pulse', 'border-red-600', 'border-amber-400', 'shadow-[0_0_60px_rgba(227,0,15,0.9)]', 'shadow-[0_0_80px_rgba(227,0,15,1)]', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'scale-110');
