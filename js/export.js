@@ -1,16 +1,13 @@
 /**
- * CPR Assist - Export Modul (V63 - Ultimate Performance Metrics)
- * - FEATURE: Amiodaron-Intervalle, Pre-Shock Pausen, Gesamt-Joule und Zeit bis ROSC im PDF/Text ergänzt.
+ * CPR Assist - Export Modul (V64 - SAMPLER Alter/Gewicht Integration)
  * - FEATURE: Neues "PERFORMANCE INSIGHTS" Blatt (Seite 2) im Debriefing-Modus.
- * - RESTORE: Das SBAR-Grid und die Canvas-Zeitlinie bleiben intakt.
- * - OPTIMIZATION: Canvas exportiert als JPEG (70% Qualität) statt PNG für winzige Dateigrößen.
+ * - UX: Manuell erfasstes Alter und Gewicht aus der Anamnese wird nahtlos in die PDF Übergabe injiziert.
  */
 
 window.CPR = window.CPR || {};
 
 window.CPR.Export = (function() {
 
-    // --- 1. ICON LOGIK (Für Canvas) ---
     function getIconData(txt) {
         if (!txt) return null;
         const t = txt.toLowerCase();
@@ -57,21 +54,30 @@ window.CPR.Export = (function() {
         return pauses;
     }
 
-    // --- 2. DIE DATEN-AGGEGATION (SBAR + KPIs) ---
     function extractSbarFacts() {
         const state = window.CPR.AppState || {};
         const data = state.protocolData || [];
+        const aData = state.anamneseData || {};
+
         const totalSec = state.totalSeconds || 0;
         const arrSec = state.arrestSeconds || 0;
         const compSec = state.compressingSeconds || 0;
         const ccf = arrSec > 0 ? Math.min(100, Math.round((compSec / arrSec) * 100)) : 0;
-        const ageStr = state.isPediatric ? (state.patientWeight ? `Kind (${state.patientWeight} kg)` : 'Kind (Gewicht unbek.)') : 'Erwachsener';
+        
+        // 🌟 NEU: Integriert Alter & Gewicht aus den SAMPLER Leitfragen 🌟
+        let ageStr = state.isPediatric ? (state.patientWeight ? `Kind (${state.patientWeight} kg)` : 'Kind (Gewicht unbek.)') : 'Erwachsener';
+        if (aData.alter || aData.gewicht) {
+            let zusatz = [];
+            if (aData.alter) zusatz.push(`${aData.alter} J.`);
+            if (aData.gewicht) zusatz.push(`${aData.gewicht} kg`);
+            ageStr += ` (${zusatz.join(' | ')})`;
+        }
+
         let adrTotal = "0 mg", adrCount = state.adrCount || 0;
         if (adrCount > 0) adrTotal = (state.isPediatric && state.patientWeight) ? (adrCount * Math.round(state.patientWeight * 10)) + " µg" : adrCount + " mg";
         let amioTotal = "0 mg", amioCount = state.amioCount || 0;
         if (amioCount > 0) amioTotal = (state.isPediatric && state.patientWeight) ? (amioCount * Math.round(state.patientWeight * 5)) + " mg" : (amioCount === 1 ? '300 mg' : '450 mg');
 
-        const aData = state.anamneseData || {};
         let sampStr = [];
         if (aData.sampler) {
             const sMap = {s:'Symptome', a:'Allergien', m:'Medikamente', p:'Vorerkrankungen', l:'Letzte Mahlzeit', e:'Ereignis', r:'Risikofaktoren'};
@@ -84,7 +90,6 @@ window.CPR.Export = (function() {
         let timeToRosc = null;
         let abbruchReason = null;
 
-        // --- STATISTIK & KPI ENGINE ---
         let firstCPR = null, firstShock = null, firstAdr = null, firstAccess = null;
         let firstAirway = null, definitiveAirway = null;
         let adrTimes = [], amioTimes = [], analyses = [];
@@ -97,7 +102,6 @@ window.CPR.Export = (function() {
             const t = d.action.toLowerCase();
             const sec = d.secondsFromStart;
 
-            // Ende auswerten
             if (t.includes('rosc') && !t.includes('re-arrest')) {
                 endStatus = 'ROSC';
                 if (timeToRosc === null) timeToRosc = sec;
@@ -112,7 +116,6 @@ window.CPR.Export = (function() {
                 }
             }
 
-            // KPIs ermitteln
             if (!firstCPR && (t.includes('start rea') || t.includes('kompression begonnen'))) firstCPR = sec;
             if (!firstShock && t.includes('schock abgegeben')) firstShock = sec;
             if (!firstAdr && t.includes('adrenalin')) firstAdr = sec;
@@ -124,15 +127,13 @@ window.CPR.Export = (function() {
                 if (!t.includes('beutel-maske') && !definitiveAirway) definitiveAirway = { time: sec, type: awType };
             }
 
-            // Medikamente & Analysen
             if (t.includes('adrenalin')) adrTimes.push(sec);
             if (t.includes('amiodaron') || t.includes('amio')) amioTimes.push(sec);
             if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) {
                 analyses.push(sec);
-                lastAnalysisTime = sec; // Startpunkt für Pre-Shock Pause
+                lastAnalysisTime = sec;
             }
 
-            // Defibrillationen & Pre-Shock Pause
             if (t.includes('schock abgegeben')) {
                 shockCountStats++;
                 const match = d.action.match(/(\d+)\s*[jJ]/);
@@ -176,7 +177,6 @@ window.CPR.Export = (function() {
         };
     }
 
-    // --- 3. NATIVE SBAR DRAWING (SEITE 1) ---
     function drawSbarNative(doc, facts) {
         const { ageStr, totalSec, ccf, adrTotal, amioTotal, aData, sampStr, hitsArr, state, adrCount, amioCount, endStatus, timeToRosc, abbruchReason } = facts;
         const Utils = window.CPR.Utils;
@@ -189,18 +189,19 @@ window.CPR.Export = (function() {
         y += 10;
 
         doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.2);
-        doc.roundedRect(15, y, 55, 24, 2, 2, 'FD');  // Patient
-        doc.roundedRect(75, y, 45, 24, 2, 2, 'FD');  // Dauer
+        doc.roundedRect(15, y, 65, 24, 2, 2, 'FD');  // Patient (Breiter gemacht für Alter & Gewicht)
+        doc.roundedRect(85, y, 35, 24, 2, 2, 'FD');  // Dauer
         doc.roundedRect(125, y, 70, 24, 2, 2, 'FD'); // Status
         
         doc.setFontSize(8); doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "normal");
-        doc.text("PATIENT", 42.5, y+6, {align: 'center'});
-        doc.text("GESAMTDAUER", 97.5, y+6, {align: 'center'});
+        doc.text("PATIENT", 47.5, y+6, {align: 'center'});
+        doc.text("GESAMTDAUER", 102.5, y+6, {align: 'center'});
         doc.text("AKTUELLER STATUS", 160, y+6, {align: 'center'});
         
-        doc.setFontSize(12); doc.setTextColor(15, 23, 42); doc.setFont("helvetica", "bold");
-        doc.text(ageStr, 42.5, y+14, {align: 'center'});
-        doc.text(`${Utils.formatTime(totalSec)} Min`, 97.5, y+14, {align: 'center'});
+        doc.setFontSize(11); doc.setTextColor(15, 23, 42); doc.setFont("helvetica", "bold");
+        doc.text(ageStr, 47.5, y+14, {align: 'center'});
+        doc.setFontSize(12);
+        doc.text(`${Utils.formatTime(totalSec)} Min`, 102.5, y+14, {align: 'center'});
         
         if(endStatus === 'ROSC') doc.setTextColor(16, 185, 129);
         else if(endStatus === 'Abbruch') doc.setTextColor(15, 23, 42);
@@ -294,7 +295,6 @@ window.CPR.Export = (function() {
         drawRow(y+32, "Amiodaron", `Gesamt: ${amioTotal} (${amioCount} Gaben)`, false, true);
     }
 
-    // --- 4. NATIVE STATS DRAWING (SEITE 2 - DEBRIEFING) ---
     function drawStatsNative(doc, facts) {
         const { totalHandsOff, maxPause, avgAdrInt, avgAmioInt, avgAnaInt, firstCPR, firstShock, firstAdr, firstAccess, firstAirway, definitiveAirway, shockCountStats, totalJoule, avgAnaToShock, minAnaToShock, maxAnaToShock, timeToRosc } = facts;
         const Utils = window.CPR.Utils;
@@ -310,9 +310,8 @@ window.CPR.Export = (function() {
         
         y += 10;
         doc.setDrawColor(227, 0, 15); doc.setLineWidth(1); doc.line(15, y, 195, y);
-        y += 10; // y = 40
+        y += 10; 
 
-        // Block 1: CPR QUALITÄT
         doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
         doc.text("1. CPR QUALITÄT & PAUSEN", 15, y);
         y += 4;
@@ -337,9 +336,8 @@ window.CPR.Export = (function() {
         if (maxPause > 10) doc.setTextColor(227, 0, 15); else doc.setTextColor(16, 185, 129);
         doc.text(`${maxPause} s`, 167, y+14, {align: 'center'});
 
-        y += 26; // y = 70
+        y += 26;
 
-        // Block 2: SCHOCK & RHYTHMUS
         doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
         doc.text("2. SCHOCK-THERAPIE & RHYTHMUS", 15, y);
         y += 4;
@@ -357,17 +355,16 @@ window.CPR.Export = (function() {
         doc.setFontSize(12); doc.setTextColor(15, 23, 42);
         doc.text(shockCountStats > 0 ? `${shockCountStats}x (${totalJoule} J)` : '0x', 43, y+12, {align: 'center'});
         
-        doc.setTextColor(227, 0, 15); // Rot für Pause
+        doc.setTextColor(227, 0, 15); 
         doc.text(avgAnaToShock > 0 ? `${avgAnaToShock} s` : '--', 105, y+11, {align: 'center'});
         doc.setFontSize(6); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 116, 139);
         if (avgAnaToShock > 0) doc.text(`Min: ${minAnaToShock}s | Max: ${maxAnaToShock}s`, 105, y+16, {align: 'center'});
         
-        doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(16, 185, 129); // Grün für ROSC
+        doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(16, 185, 129);
         doc.text(timeToRosc !== null ? format(timeToRosc) : '--:--', 167, y+14, {align: 'center'});
 
-        y += 26; // y = 100
+        y += 26; 
 
-        // Block 3: MEDIKAMENTE & INTERVALLE
         doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
         doc.text("3. MEDIKAMENTE & INTERVALLE", 15, y);
         y += 4;
@@ -387,9 +384,8 @@ window.CPR.Export = (function() {
         doc.text(avgAmioInt > 0 ? format(avgAmioInt) : '--:--', 105, y+14, {align: 'center'});
         doc.text(avgAnaInt > 0 ? format(avgAnaInt) : '--:--', 167, y+14, {align: 'center'});
 
-        y += 26; // y = 130
+        y += 26;
 
-        // Block 4: ATEMWEGS-MANAGEMENT
         doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
         doc.text("4. ATEMWEGS-MANAGEMENT", 15, y);
         y += 4;
@@ -406,9 +402,8 @@ window.CPR.Export = (function() {
         doc.text(firstAirway ? format(firstAirway.time) : '--:--', 58.5, y+14, {align: 'center'});
         doc.text(definitiveAirway ? format(definitiveAirway.time) : '--:--', 151.5, y+14, {align: 'center'});
 
-        y += 26; // y = 160
+        y += 26;
 
-        // Block 5: REAKTIONSZEITEN
         doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
         doc.text("5. REAKTIONSZEITEN (AB START REA)", 15, y);
         y += 4;
@@ -431,13 +426,11 @@ window.CPR.Export = (function() {
         doc.text(firstAdr !== null ? format(firstAdr) : '--:--', 128, y+14, {align: 'center'});
         doc.text(firstAccess !== null ? format(firstAccess) : '--:--', 174, y+14, {align: 'center'});
         
-        // Footer Note
         doc.setFontSize(8); doc.setTextColor(148, 163, 184); doc.setFont("helvetica", "normal");
         doc.text("Dieses Protokoll wurde maschinell durch CPR Assist erstellt. Alle Angaben sind fachlich zu prüfen.", 105, 285, {align: 'center'});
     }
 
 
-    // --- 5. CANVAS NOTENBLATT ENGINE (QUERFORMAT: 5x 4-Minuten) ---
     function drawSafeRoundRect(ctx, x, y, w, h, r) {
         if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); } else {
             ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
@@ -571,7 +564,6 @@ window.CPR.Export = (function() {
         return canvas;
     }
 
-    // --- 6. NATIVE PDF GENERIERUNG ---
     function generatePdfExport() {
         const { AppState, Utils } = window.CPR;
         if (!AppState || !AppState.protocolData || AppState.protocolData.length === 0) { alert("Das Protokoll ist leer."); return; }
@@ -601,7 +593,6 @@ window.CPR.Export = (function() {
         const uiStartRaw = document.getElementById('start-time')?.innerText || '--:--';
         const safeStartTimeStr = uiStartRaw !== '--:--' ? uiStartRaw.replace('Start:', '').trim() + ' Uhr' : '--:--';
 
-        // SEITE 1: HEADER & SBAR
         doc.setFontSize(22); doc.setTextColor(15, 23, 42); doc.setFont("helvetica", "bold");
         doc.text("REANIMATIONSPROTOKOLL", 15, 20);
         
@@ -619,14 +610,11 @@ window.CPR.Export = (function() {
         doc.setFontSize(8); doc.setTextColor(148, 163, 184); doc.setFont("helvetica", "normal");
         doc.text("Dieses Protokoll wurde maschinell durch CPR Assist erstellt. Alle Angaben sind fachlich zu prüfen.", 105, 285, {align: 'center'});
 
-        // WENN DEBRIEFING MODUS -> DANN STATISTIK & ZEITLINIEN EINBAUEN
         if (!isSummary) {
             
-            // 🌟 SEITE 2: PERFORMANCE INSIGHTS 🌟
             doc.addPage('a4', 'portrait');
             drawStatsNative(doc, facts);
 
-            // SEITE 3+: CANVAS ZEITLINIE
             const data = AppState.protocolData;
             const maxSec = facts.maxSec;
             const pauses = facts.pausesObj;
@@ -642,7 +630,6 @@ window.CPR.Export = (function() {
                 doc.text("Generiert durch CPR Assist", 148.5, 205, {align: 'center'});
             }
 
-            // SEITE X+: CHRONOLOGIE LISTE
             doc.addPage('a4', 'portrait');
             let listY = 20;
             
@@ -702,7 +689,6 @@ window.CPR.Export = (function() {
         if (em) em.classList.replace('flex', 'hidden');
     }
 
-    // --- 7. TEXT EXPORT (Clipboard Update inkl. Stats) ---
     function generateTxtExport() {
         const { AppState, Utils } = window.CPR;
         if (!AppState || !AppState.protocolData || AppState.protocolData.length === 0) { alert("Protokoll leer."); return; }
@@ -730,7 +716,6 @@ window.CPR.Export = (function() {
         
         text += "\n--- [R] RESPONSE ---\nAtemweg: " + (AppState.airwayLabel || 'Nicht dok.') + "\nZugang: " + (AppState.zugangLabel || 'Nicht dok.') + "\nSchocks: " + (facts.shockCountStats || 0) + "x abgegeben (Gesamt: " + facts.totalJoule + " J)\nAdrenalin: " + facts.adrTotal + " (" + facts.adrCount + " Gaben)\nAmiodaron: " + facts.amioTotal + " (" + facts.amioCount + " Gaben)\n\n";
 
-        // 🌟 NEU: Erweiterte KPIs im Text Export 🌟
         if (!isSummary) {
             text += "--- PERFORMANCE INSIGHTS ---\n";
             text += "Hands-Off Gesamt: " + Utils.formatTime(facts.totalHandsOff) + " Min\n";
@@ -766,7 +751,6 @@ window.CPR.Export = (function() {
         else fallbackCopy(text);
     }
 
-    // --- 8. EVENT DELEGATION ---
     function init() {
         document.addEventListener('click', function(e) {
             const btnPdf = e.target.closest('#btn-run-pdf-export');
