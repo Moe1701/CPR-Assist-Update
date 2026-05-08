@@ -1,8 +1,7 @@
 /**
- * CPR Assist - Export Modul (V62 - Advanced KPI Integration)
+ * CPR Assist - Export Modul (V63 - Ultimate Performance Metrics)
+ * - FEATURE: Amiodaron-Intervalle, Pre-Shock Pausen, Gesamt-Joule und Zeit bis ROSC im PDF/Text ergänzt.
  * - FEATURE: Neues "PERFORMANCE INSIGHTS" Blatt (Seite 2) im Debriefing-Modus.
- * - FEATURE: Native Vektor-Generierung für gestochen scharfen Druck.
- * - FEATURE: KPIs (Zeiten & Intervalle) auch im Text/Clipboard-Export verfügbar.
  * - RESTORE: Das SBAR-Grid und die Canvas-Zeitlinie bleiben intakt.
  * - OPTIMIZATION: Canvas exportiert als JPEG (70% Qualität) statt PNG für winzige Dateigrößen.
  */
@@ -88,7 +87,11 @@ window.CPR.Export = (function() {
         // --- STATISTIK & KPI ENGINE ---
         let firstCPR = null, firstShock = null, firstAdr = null, firstAccess = null;
         let firstAirway = null, definitiveAirway = null;
-        let adrTimes = [], analyses = [];
+        let adrTimes = [], amioTimes = [], analyses = [];
+        let totalJoule = 0, shockCountStats = 0;
+        
+        let anaToShockIntervals = [];
+        let lastAnalysisTime = null;
 
         data.forEach(d => {
             const t = d.action.toLowerCase();
@@ -121,8 +124,25 @@ window.CPR.Export = (function() {
                 if (!t.includes('beutel-maske') && !definitiveAirway) definitiveAirway = { time: sec, type: awType };
             }
 
+            // Medikamente & Analysen
             if (t.includes('adrenalin')) adrTimes.push(sec);
-            if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) analyses.push(sec);
+            if (t.includes('amiodaron') || t.includes('amio')) amioTimes.push(sec);
+            if (t.includes('rhythmusanalyse') || t.includes('schockbar') || t.includes('nicht schockbar')) {
+                analyses.push(sec);
+                lastAnalysisTime = sec; // Startpunkt für Pre-Shock Pause
+            }
+
+            // Defibrillationen & Pre-Shock Pause
+            if (t.includes('schock abgegeben')) {
+                shockCountStats++;
+                const match = d.action.match(/(\d+)\s*[jJ]/);
+                if (match) totalJoule += parseInt(match[1], 10);
+                
+                if (lastAnalysisTime !== null) {
+                    anaToShockIntervals.push(sec - lastAnalysisTime);
+                    lastAnalysisTime = null;
+                }
+            }
         });
 
         if (endStatus === 'ROSC' && timeToRosc === null) timeToRosc = totalSec;
@@ -137,14 +157,22 @@ window.CPR.Export = (function() {
         let adrIntervals = []; for (let i = 1; i < adrTimes.length; i++) adrIntervals.push(adrTimes[i] - adrTimes[i-1]);
         const avgAdrInt = adrIntervals.length > 0 ? Math.round(adrIntervals.reduce((a, b) => a + b, 0) / adrIntervals.length) : 0;
         
+        let amioIntervals = []; for (let i = 1; i < amioTimes.length; i++) amioIntervals.push(amioTimes[i] - amioTimes[i-1]);
+        const avgAmioInt = amioIntervals.length > 0 ? Math.round(amioIntervals.reduce((a, b) => a + b, 0) / amioIntervals.length) : 0;
+
         let anaIntervals = []; for (let i = 1; i < analyses.length; i++) anaIntervals.push(analyses[i] - analyses[i-1]);
         const avgAnaInt = anaIntervals.length > 0 ? Math.round(anaIntervals.reduce((a, b) => a + b, 0) / anaIntervals.length) : 0;
+
+        const avgAnaToShock = anaToShockIntervals.length > 0 ? Math.round(anaToShockIntervals.reduce((a,b)=>a+b,0)/anaToShockIntervals.length) : 0;
+        const minAnaToShock = anaToShockIntervals.length > 0 ? Math.min(...anaToShockIntervals) : 0;
+        const maxAnaToShock = anaToShockIntervals.length > 0 ? Math.max(...anaToShockIntervals) : 0;
 
         return { 
             ageStr, totalSec, ccf, adrCount, adrTotal, amioCount, amioTotal, aData, sampStr, hitsArr, state, data, 
             endStatus, timeToRosc, abbruchReason, maxSec, pausesObj, 
             firstCPR, firstShock, firstAdr, firstAccess, firstAirway, definitiveAirway, 
-            maxPause, totalHandsOff, avgAdrInt, avgAnaInt 
+            maxPause, totalHandsOff, avgAdrInt, avgAmioInt, avgAnaInt,
+            shockCountStats, totalJoule, avgAnaToShock, minAnaToShock, maxAnaToShock
         };
     }
 
@@ -268,7 +296,7 @@ window.CPR.Export = (function() {
 
     // --- 4. NATIVE STATS DRAWING (SEITE 2 - DEBRIEFING) ---
     function drawStatsNative(doc, facts) {
-        const { totalHandsOff, maxPause, avgAdrInt, avgAnaInt, firstCPR, firstShock, firstAdr, firstAccess, firstAirway, definitiveAirway } = facts;
+        const { totalHandsOff, maxPause, avgAdrInt, avgAmioInt, avgAnaInt, firstCPR, firstShock, firstAdr, firstAccess, firstAirway, definitiveAirway, shockCountStats, totalJoule, avgAnaToShock, minAnaToShock, maxAnaToShock, timeToRosc } = facts;
         const Utils = window.CPR.Utils;
         const format = Utils.formatTime;
 
@@ -282,89 +310,120 @@ window.CPR.Export = (function() {
         
         y += 10;
         doc.setDrawColor(227, 0, 15); doc.setLineWidth(1); doc.line(15, y, 195, y);
-        y += 12;
+        y += 10; // y = 40
 
         // Block 1: CPR QUALITÄT
-        doc.setFontSize(14); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
+        doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
         doc.text("1. CPR QUALITÄT & PAUSEN", 15, y);
-        y += 6;
+        y += 4;
         
         doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.2);
-        doc.roundedRect(15, y, 56, 24, 2, 2, 'FD');
-        doc.roundedRect(77, y, 56, 24, 2, 2, 'FD');
-        doc.roundedRect(139, y, 56, 24, 2, 2, 'FD');
+        doc.roundedRect(15, y, 56, 18, 2, 2, 'FD');
+        doc.roundedRect(77, y, 56, 18, 2, 2, 'FD');
+        doc.roundedRect(139, y, 56, 18, 2, 2, 'FD');
 
-        doc.setFontSize(8); doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "bold");
-        doc.text("CCF (CPR-ANTEIL)", 43, y+6, {align: 'center'});
-        doc.text("HANDS-OFF GESAMT", 105, y+6, {align: 'center'});
-        doc.text("LÄNGSTE PAUSE", 167, y+6, {align: 'center'});
+        doc.setFontSize(7); doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "bold");
+        doc.text("CCF (CPR-ANTEIL)", 43, y+5, {align: 'center'});
+        doc.text("HANDS-OFF GESAMT", 105, y+5, {align: 'center'});
+        doc.text("LÄNGSTE PAUSE", 167, y+5, {align: 'center'});
 
-        doc.setFontSize(16); doc.setFont("helvetica", "bold");
+        doc.setFontSize(14); doc.setFont("helvetica", "bold");
         if (facts.ccf >= 80) doc.setTextColor(16, 185, 129); else doc.setTextColor(227, 0, 15);
-        doc.text(`${facts.ccf}%`, 43, y+16, {align: 'center'});
+        doc.text(`${facts.ccf}%`, 43, y+14, {align: 'center'});
 
         doc.setTextColor(15, 23, 42);
-        doc.text(`${format(totalHandsOff)} Min`, 105, y+16, {align: 'center'});
+        doc.text(`${format(totalHandsOff)} Min`, 105, y+14, {align: 'center'});
 
         if (maxPause > 10) doc.setTextColor(227, 0, 15); else doc.setTextColor(16, 185, 129);
-        doc.text(`${maxPause} s`, 167, y+16, {align: 'center'});
+        doc.text(`${maxPause} s`, 167, y+14, {align: 'center'});
 
-        y += 35;
+        y += 26; // y = 70
 
-        // Block 2: THERAPIE-INTERVALLE
-        doc.setFontSize(14); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
-        doc.text("2. THERAPIE-INTERVALLE", 15, y);
-        y += 6;
+        // Block 2: SCHOCK & RHYTHMUS
+        doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
+        doc.text("2. SCHOCK-THERAPIE & RHYTHMUS", 15, y);
+        y += 4;
         
         doc.setFillColor(248, 250, 252); 
-        doc.roundedRect(15, y, 87, 20, 2, 2, 'FD');
-        doc.roundedRect(108, y, 87, 20, 2, 2, 'FD');
+        doc.roundedRect(15, y, 56, 18, 2, 2, 'FD');
+        doc.roundedRect(77, y, 56, 18, 2, 2, 'FD');
+        doc.roundedRect(139, y, 56, 18, 2, 2, 'FD');
 
-        doc.setFontSize(8); doc.setTextColor(100, 116, 139);
-        doc.text("Ø ADRENALIN-INTERVALL", 58.5, y+6, {align: 'center'});
-        doc.text("Ø RHYTHMUS-ANALYSE", 151.5, y+6, {align: 'center'});
+        doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+        doc.text("DEFIBRILLATIONEN", 43, y+5, {align: 'center'});
+        doc.text("PRE-SHOCK PAUSE", 105, y+5, {align: 'center'});
+        doc.text("ZEIT BIS ROSC", 167, y+5, {align: 'center'});
+
+        doc.setFontSize(12); doc.setTextColor(15, 23, 42);
+        doc.text(shockCountStats > 0 ? `${shockCountStats}x (${totalJoule} J)` : '0x', 43, y+12, {align: 'center'});
+        
+        doc.setTextColor(227, 0, 15); // Rot für Pause
+        doc.text(avgAnaToShock > 0 ? `${avgAnaToShock} s` : '--', 105, y+11, {align: 'center'});
+        doc.setFontSize(6); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 116, 139);
+        if (avgAnaToShock > 0) doc.text(`Min: ${minAnaToShock}s | Max: ${maxAnaToShock}s`, 105, y+16, {align: 'center'});
+        
+        doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.setTextColor(16, 185, 129); // Grün für ROSC
+        doc.text(timeToRosc !== null ? format(timeToRosc) : '--:--', 167, y+14, {align: 'center'});
+
+        y += 26; // y = 100
+
+        // Block 3: MEDIKAMENTE & INTERVALLE
+        doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
+        doc.text("3. MEDIKAMENTE & INTERVALLE", 15, y);
+        y += 4;
+        
+        doc.setFillColor(248, 250, 252); 
+        doc.roundedRect(15, y, 56, 18, 2, 2, 'FD');
+        doc.roundedRect(77, y, 56, 18, 2, 2, 'FD');
+        doc.roundedRect(139, y, 56, 18, 2, 2, 'FD');
+
+        doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+        doc.text("Ø ADRENALIN-INTERVALL", 43, y+5, {align: 'center'});
+        doc.text("Ø AMIODARON-INTERVALL", 105, y+5, {align: 'center'});
+        doc.text("Ø RHYTHMUS-ANALYSE", 167, y+5, {align: 'center'});
 
         doc.setFontSize(14); doc.setTextColor(15, 23, 42);
-        doc.text(avgAdrInt > 0 ? format(avgAdrInt) : '--:--', 58.5, y+14, {align: 'center'});
-        doc.text(avgAnaInt > 0 ? format(avgAnaInt) : '--:--', 151.5, y+14, {align: 'center'});
+        doc.text(avgAdrInt > 0 ? format(avgAdrInt) : '--:--', 43, y+14, {align: 'center'});
+        doc.text(avgAmioInt > 0 ? format(avgAmioInt) : '--:--', 105, y+14, {align: 'center'});
+        doc.text(avgAnaInt > 0 ? format(avgAnaInt) : '--:--', 167, y+14, {align: 'center'});
 
-        y += 30;
+        y += 26; // y = 130
 
-        // Block 3: ATEMWEGS-MANAGEMENT
-        doc.setFontSize(14); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
-        doc.text("3. ATEMWEGS-MANAGEMENT", 15, y);
-        y += 6;
+        // Block 4: ATEMWEGS-MANAGEMENT
+        doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
+        doc.text("4. ATEMWEGS-MANAGEMENT", 15, y);
+        y += 4;
         
         doc.setFillColor(248, 250, 252); 
-        doc.roundedRect(15, y, 87, 20, 2, 2, 'FD');
-        doc.roundedRect(108, y, 87, 20, 2, 2, 'FD');
+        doc.roundedRect(15, y, 87, 18, 2, 2, 'FD');
+        doc.roundedRect(108, y, 87, 18, 2, 2, 'FD');
 
-        doc.setFontSize(8); doc.setTextColor(100, 116, 139);
-        doc.text(`1. MASSNAHME (${firstAirway ? firstAirway.type.toUpperCase() : '-'})`, 58.5, y+6, {align: 'center'});
-        doc.text(`SICHERUNG (${definitiveAirway ? definitiveAirway.type.toUpperCase() : '-'})`, 151.5, y+6, {align: 'center'});
+        doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+        doc.text(`1. MASSNAHME (${firstAirway ? firstAirway.type.toUpperCase() : '-'})`, 58.5, y+5, {align: 'center'});
+        doc.text(`SICHERUNG (${definitiveAirway ? definitiveAirway.type.toUpperCase() : '-'})`, 151.5, y+5, {align: 'center'});
 
         doc.setFontSize(14); doc.setTextColor(15, 23, 42);
         doc.text(firstAirway ? format(firstAirway.time) : '--:--', 58.5, y+14, {align: 'center'});
         doc.text(definitiveAirway ? format(definitiveAirway.time) : '--:--', 151.5, y+14, {align: 'center'});
 
-        y += 30;
+        y += 26; // y = 160
 
-        // Block 4: REAKTIONSZEITEN
-        doc.setFontSize(14); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
-        doc.text("4. REAKTIONSZEITEN (AB START REA)", 15, y);
-        y += 6;
+        // Block 5: REAKTIONSZEITEN
+        doc.setFontSize(12); doc.setTextColor(227, 0, 15); doc.setFont("helvetica", "bold");
+        doc.text("5. REAKTIONSZEITEN (AB START REA)", 15, y);
+        y += 4;
         
         doc.setFillColor(248, 250, 252); 
-        doc.roundedRect(15, y, 42, 20, 2, 2, 'FD');
-        doc.roundedRect(61, y, 42, 20, 2, 2, 'FD');
-        doc.roundedRect(107, y, 42, 20, 2, 2, 'FD');
-        doc.roundedRect(153, y, 42, 20, 2, 2, 'FD');
+        doc.roundedRect(15, y, 42, 18, 2, 2, 'FD');
+        doc.roundedRect(61, y, 42, 18, 2, 2, 'FD');
+        doc.roundedRect(107, y, 42, 18, 2, 2, 'FD');
+        doc.roundedRect(153, y, 42, 18, 2, 2, 'FD');
 
-        doc.setFontSize(8); doc.setTextColor(100, 116, 139);
-        doc.text("1. KOMPRESSION", 36, y+6, {align: 'center'});
-        doc.text("1. SCHOCK", 82, y+6, {align: 'center'});
-        doc.text("1. ADRENALIN", 128, y+6, {align: 'center'});
-        doc.text("1. ZUGANG", 174, y+6, {align: 'center'});
+        doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+        doc.text("1. KOMPRESSION", 36, y+5, {align: 'center'});
+        doc.text("1. SCHOCK", 82, y+5, {align: 'center'});
+        doc.text("1. SUPRA", 128, y+5, {align: 'center'});
+        doc.text("1. ZUGANG", 174, y+5, {align: 'center'});
 
         doc.setFontSize(14); doc.setTextColor(15, 23, 42);
         doc.text(firstCPR !== null ? format(firstCPR) : '--:--', 36, y+14, {align: 'center'});
@@ -402,7 +461,6 @@ window.CPR.Export = (function() {
         canvas.height = baseHeight * scale;
         ctx.scale(scale, scale);
         
-        // HINTERGRUND WICHTIG: Komplett weiß malen (damit JPEG funktioniert!)
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, baseWidth, baseHeight);
 
@@ -421,7 +479,7 @@ window.CPR.Export = (function() {
 
         for (let i = 0; i < 5; i++) {
             const currentDrawSec = startSecForPage + (i * cycleDuration);
-            if (currentDrawSec > maxSecOverall && i > 0) break; // Leere Zeilen am Ende sparen, außer die allererste
+            if (currentDrawSec > maxSecOverall && i > 0) break;
             const cycleEndSec = currentDrawSec + cycleDuration;
             const lineY = 160 + (i * 150);
 
@@ -540,7 +598,6 @@ window.CPR.Export = (function() {
         
         const facts = extractSbarFacts();
 
-        // 🌟 FIX: Startzeit sicher aus der UI auslesen 🌟
         const uiStartRaw = document.getElementById('start-time')?.innerText || '--:--';
         const safeStartTimeStr = uiStartRaw !== '--:--' ? uiStartRaw.replace('Start:', '').trim() + ' Uhr' : '--:--';
 
@@ -565,7 +622,7 @@ window.CPR.Export = (function() {
         // WENN DEBRIEFING MODUS -> DANN STATISTIK & ZEITLINIEN EINBAUEN
         if (!isSummary) {
             
-            // 🌟 SEITE 2: PERFORMANCE INSIGHTS (Die neuen KPIs) 🌟
+            // 🌟 SEITE 2: PERFORMANCE INSIGHTS 🌟
             doc.addPage('a4', 'portrait');
             drawStatsNative(doc, facts);
 
@@ -578,12 +635,7 @@ window.CPR.Export = (function() {
             for (let p = 0; p < totalPagesTimeline; p++) {
                 doc.addPage('a4', 'landscape');
                 const canvas = createTimelineCanvasChunk(data, pauses, p, maxSec);
-                
-                // 🌟 DIE MAGIC-ÄNDERUNG FÜR MASSIVE DATEIKOMPRIMIERUNG 🌟
-                // Statt 'image/png' (verlustfrei und riesig) nutzen wir JPEG mit 70% Qualität
                 const imgData = canvas.toDataURL('image/jpeg', 0.7); 
-                
-                // Beim Einbetten den Datentyp auf JPEG und die Kompression auf 'FAST' setzen
                 doc.addImage(imgData, 'JPEG', 10, 10, 277, 190, undefined, 'FAST');
                 
                 doc.setFontSize(8); doc.setTextColor(148, 163, 184); doc.setFont("helvetica", "normal");
@@ -676,14 +728,16 @@ window.CPR.Export = (function() {
         text += "\n--- [A] ASSESSMENT ---\nCPR Qualität (CCF): " + facts.ccf + "%\n";
         if (facts.hitsArr.length > 0) facts.hitsArr.forEach(h => text += "- " + h + "\n"); else text += "Keine HITS erfasst.\n";
         
-        text += "\n--- [R] RESPONSE ---\nAtemweg: " + (AppState.airwayLabel || 'Nicht dok.') + "\nZugang: " + (AppState.zugangLabel || 'Nicht dok.') + "\nSchocks: " + (AppState.shockCount || 0) + "x abgegeben\nAdrenalin: " + facts.adrTotal + " (" + facts.adrCount + " Gaben)\nAmiodaron: " + facts.amioTotal + " (" + facts.amioCount + " Gaben)\n\n";
+        text += "\n--- [R] RESPONSE ---\nAtemweg: " + (AppState.airwayLabel || 'Nicht dok.') + "\nZugang: " + (AppState.zugangLabel || 'Nicht dok.') + "\nSchocks: " + (facts.shockCountStats || 0) + "x abgegeben (Gesamt: " + facts.totalJoule + " J)\nAdrenalin: " + facts.adrTotal + " (" + facts.adrCount + " Gaben)\nAmiodaron: " + facts.amioTotal + " (" + facts.amioCount + " Gaben)\n\n";
 
-        // 🌟 NEU: KPIs im Text Export 🌟
+        // 🌟 NEU: Erweiterte KPIs im Text Export 🌟
         if (!isSummary) {
             text += "--- PERFORMANCE INSIGHTS ---\n";
             text += "Hands-Off Gesamt: " + Utils.formatTime(facts.totalHandsOff) + " Min\n";
             text += "Längste Pause: " + facts.maxPause + " s\n";
+            if (facts.avgAnaToShock > 0) text += "Ø Pre-Shock Pause: " + facts.avgAnaToShock + " s (Min: " + facts.minAnaToShock + "s | Max: " + facts.maxAnaToShock + "s)\n";
             text += "Ø Adrenalin-Intervall: " + (facts.avgAdrInt > 0 ? Utils.formatTime(facts.avgAdrInt) : '--:--') + "\n";
+            text += "Ø Amiodaron-Intervall: " + (facts.avgAmioInt > 0 ? Utils.formatTime(facts.avgAmioInt) : '--:--') + "\n";
             text += "Atemweg 1. Maßnahme: " + (facts.firstAirway ? Utils.formatTime(facts.firstAirway.time) + " (" + facts.firstAirway.type + ")" : "--:--") + "\n";
             text += "Atemweg Sicherung: " + (facts.definitiveAirway ? Utils.formatTime(facts.definitiveAirway.time) + " (" + facts.definitiveAirway.type + ")" : "--:--") + "\n\n";
 
