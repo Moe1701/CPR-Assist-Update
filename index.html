@@ -1,1268 +1,768 @@
-/**
- * CPR Assist - Master Controller (Medical Grade Background-Safe)
- * - FEATURE: Natives "Beutel-Maske" Routing integriert.
- * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
- * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
- * - SMART PROMPT (VISUAL HAMMER): Atemwegs-Button pulsiert "Beatmung?" extrem auffällig über innerHTML-Injection!
- * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
- * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
- * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
- * - BULLETPROOF FIX: Top Stats werden über redundante DOM-Befehle garantiert eingeblendet.
- * - TIME TRAVEL FIX: CPR und CCF-Berechnung laufen während App-Backgrounding lückenlos weiter.
- */
-
-document.addEventListener('DOMContentLoaded', function() {
-    const CPR = window.CPR;
-    const { CONFIG, Globals, AppState, broselowData, Utils, UI, Audio: AudioEngine } = CPR;
-
-    // =========================================================
-    // 🌟 ABSOLUT-POSITIONIERUNG für den Timer Screen
-    // =========================================================
-    function remodelViewTimer() {
-        const vt = document.getElementById('view-timer');
-        if (vt) {
-            vt.className = "hidden flex-col items-center justify-center w-full h-full text-center relative pointer-events-none";
-            const shocks = AppState.shockCount || 0;
-            
-            vt.innerHTML = `
-                <!-- 1. Top: Bei Analyse drücken -->
-                <div class="vt-top-text">
-                    <span id="timer-top-text">Bei Analyse drücken</span>
-                </div>
-
-                <!-- 2. Mitte: Der Timer -->
-                <div id="cycle-timer" class="vt-timer-display" style="font-variant-numeric: tabular-nums;">
-                    02:00
-                </div>
-
-                <!-- 3. Unter dem Timer: Die Alerts -->
-                <div id="inner-prepare-alert" class="hidden vt-alert-box">
-                    <div class="vt-alert-row">
-                        <div class="vt-alert-dot bg-amber-500 animate-ping"></div>
-                        <span class="vt-alert-txt text-amber-500">Puls tasten, Defi laden</span>
-                    </div>
-                    <span id="prepare-time" class="vt-alert-num text-amber-500">30</span>
-                </div>
-
-                <div id="inner-precharge-alert" class="hidden vt-alert-box">
-                    <div class="vt-alert-row">
-                        <div class="vt-alert-dot bg-[#E3000F] animate-ping"></div>
-                        <span class="vt-alert-txt text-[#E3000F]">Defi laden</span>
-                    </div>
-                    <span id="precharge-time" class="vt-alert-num text-[#E3000F]">15</span>
-                </div>
-
-                <!-- OVERLAP FIX: Redundanter Subtext "Jetzt hier drücken" wurde entfernt! -->
-                <div id="inner-analyze-alert" class="hidden vt-alert-box">
-                    <div class="vt-analyze-badge animate-pulse">
-                        <span class="vt-analyze-txt">Analyse Fällig</span>
-                    </div>
-                </div>
-
-                <!-- 4. Unten: Schock Info -->
-                <div class="vt-bottom-info">
-                    <i class="fa-solid fa-bolt text-amber-400"></i>
-                    <span id="rhythm-info-shocks">${shocks}</span>
-                    <span class="text-slate-300 mx-1">|</span>
-                    <span id="rhythm-info-joule" class="text-[#E3000F]">150 J</span>
-                </div>
-            `;
-        }
-    }
-    remodelViewTimer();
-    // =========================================================
-
-    // 🌟 HELPER: Garantiert die Sichtbarkeit der Top-Stats (Tailwind + natives DOM) 🌟
-    function showTopStats() {
-        const topStats = document.getElementById('top-stats-container');
-        if (topStats) {
-            topStats.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
-            topStats.classList.add('opacity-100', 'pointer-events-auto');
-            topStats.style.opacity = '1';
-            topStats.style.pointerEvents = 'auto';
-        }
-    }
-
-    // 🌟 ARCHITEKTUR-FIX: Steuert das globale Sichtbarkeits-Konzept der Satelliten
-    function navHelper(newState, viewId, size) {
-        if (newState) { AppState.previousState = AppState.state; AppState.state = newState; }
-        
-        // CHIRURGISCHER BUGFIX: Nur umschalten, wenn auch wirklich eine viewId übergeben wurde!
-        if (viewId && UI && typeof UI.switchView === 'function') { 
-            UI.switchView(viewId); 
-        }
-        
-        // Entweder über UI.js oder als direkter Fallback:
-        if (UI && typeof UI.setCenterSize === 'function' && size) { 
-            UI.setCenterSize(size); 
-        } else if (size) {
-            if (size === 'small') {
-                document.body.classList.add('cpr-mode-small');
-                document.body.classList.remove('center-menu-open');
-            } else if (size === 'large') {
-                document.body.classList.remove('cpr-mode-small');
-                document.body.classList.add('center-menu-open');
-            }
-        }
-
-        // 🌟 NEU: Atemweg & CPR-Button ab "Kompression gestartet" sanft einblenden
-        if (newState === 'OB_COMPRESSIONS' || newState === 'OB_ANALYZE') {
-            ['btn-airway', 'btn-cpr'].forEach(id => { 
-                const el = document.getElementById(id); 
-                if (el) el.classList.remove('opacity-0', 'pointer-events-none'); 
-            });
-        }
-    }
-    window.CPR.navHelper = navHelper;
-
-    function addClick(id, handler) { 
-        const el = document.getElementById(id); 
-        if (el) {
-            el.addEventListener('click', (e) => {
-                if (window.CPR.Globals && Date.now() - (window.CPR.Globals.lastViewSwitch || 0) < 150) {
-                    e.preventDefault(); e.stopPropagation(); return;
-                }
-                handler(e);
-            });
-        }
-    }
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CPR Assist</title>
     
-    function markMenuAction() { Globals.lastMenuAction = Date.now(); }
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#E3000F">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Externe Bibliotheken -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Die jsPDF Bibliothek für den Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <!-- Eigene CSS Datei (Mit CACHE-BUSTER v1001!) -->
+    <link rel="stylesheet" href="css/style.css?v=1001">
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans h-[100dvh] flex flex-col m-0 overflow-hidden no-select relative">
 
-    let logoClickCount = 0; let logoClickTimer = null;
-    const logoContainer = document.getElementById('logo-container');
-    if (logoContainer) {
-        logoContainer.addEventListener('click', function(e) {
-            logoClickCount++;
-            if (logoClickCount === 1) logoClickTimer = setTimeout(() => { logoClickCount = 0; }, 1500); 
-            if (logoClickCount >= 3) {
-                clearTimeout(logoClickTimer); logoClickCount = 0;
-                if (Utils && Utils.vibrate) Utils.vibrate([100, 100, 100]); 
-                if (confirm("NOTFALL-RESET: Möchtest du die App sofort zurücksetzen und alle Daten löschen?")) {
-                    if (CPR.Utils && CPR.Utils.resetApp) CPR.Utils.resetApp();
-                    else { CPR.isResetting = true; localStorage.clear(); window.location.reload(); }
-                }
-            }
-        });
-    }
+    <div id="js-failsafe" class="hidden absolute inset-0 z-[999] bg-[#E3000F] text-white flex-col items-center justify-center text-center p-6">
+        <i class="fa-solid fa-triangle-exclamation text-6xl mb-4"></i>
+        <h1 class="text-2xl font-black uppercase mb-2">Ladefehler</h1>
+        <p class="font-bold text-sm mb-4">Die Code-Dateien wurden nicht gefunden!</p>
+        <p class="text-xs mt-2 opacity-90 max-w-sm">Lade die Seite auf dem Handy komplett neu (Cache leeren).</p>
+        <div id="error-log" class="mt-6 text-[10px] font-mono text-yellow-300"></div>
+    </div>
 
-    async function requestWakeLock() {
-        try { if ('wakeLock' in navigator) { Globals.wakeLock = await navigator.wakeLock.request('screen'); updateWakeLockUI(true); } } catch (err) {}
-    }
+    <!-- HEADER -->
+    <header class="flex items-center justify-between bg-white px-4 py-3 border-b border-slate-200 shadow-sm z-[70] relative shrink-0">
+        <div id="logo-container" class="flex items-center gap-3 p-1 select-none cursor-pointer">
+            <div class="w-10 h-10 flex items-center justify-center shrink-0 text-[#E3000F]">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg>
+            </div>
+            <div class="flex flex-col justify-center leading-none">
+                <span class="text-lg font-black text-slate-900 uppercase tracking-tight">CPR Assist</span>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">by Moe</span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="btn-help" class="text-slate-400 text-xl p-2 active:scale-90 transition-transform select-none"><i class="fa-solid fa-circle-question pointer-events-none"></i></button>
+            <button id="btn-toggle-sound" class="text-slate-400 text-xl p-2 active:scale-90 transition-transform">
+                <i id="icon-sound-on" class="fa-solid fa-volume-high pointer-events-none"></i>
+                <i id="icon-sound-off" class="fa-solid fa-volume-xmark hidden pointer-events-none"></i>
+            </button>
+            <button id="btn-settings" class="text-slate-600 text-xl p-2 active:scale-90 transition-transform ml-1"><i class="fa-solid fa-gear pointer-events-none"></i></button>
+        </div>
+    </header>
 
-    function updateWakeLockUI(isActive) {
-        const wlBadge = document.getElementById('wake-lock-status');
-        if (wlBadge) {
-            wlBadge.innerHTML = isActive ? '<i class="fa-solid fa-sun"></i> Display-Schutz AKTIV' : '<i class="fa-solid fa-moon"></i> Display-Schutz inaktiv';
-            wlBadge.className = isActive ? 'block text-[9px] font-bold text-emerald-600 uppercase tracking-widest mt-1' : 'block text-[9px] font-bold text-amber-500 uppercase tracking-widest mt-1';
-        }
-    }
-
-    // 🌟 CLEANUP: Meldet neue Einträge direkt an die LogTimeline, ohne selbst ins HTML zu pfuschen!
-    function addLogEntry(txt) {
-        if (!AppState.protocolData) AppState.protocolData = [];
-        AppState.protocolData.push({
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            secondsFromStart: AppState.totalSeconds || 0,
-            action: txt
-        });
-        Utils.saveSession();
-
-        if (window.CPR.LogTimeline && typeof window.CPR.LogTimeline.forceRender === 'function') {
-            window.CPR.LogTimeline.forceRender();
-        }
-    }
-    window.addLogEntry = addLogEntry;
-
-    function startMainTimer() {
-        // Stats absolut sicher einblenden
-        showTopStats();
+    <!-- 🌟 LAYOUT ANCHOR: Verankert die Top-Stats UND den Disclaimer fix oben 🌟 -->
+    <div class="relative w-full shrink-0 z-[60]">
         
-        const startTimeEl = document.getElementById('start-time');
-        if (startTimeEl && startTimeEl.innerText === '--:--') startTimeEl.innerText = "Start: " + new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-        
-        if (Globals.mainInterval) clearInterval(Globals.mainInterval);
-        
-        let lastTickTime = Date.now();
-        
-        Globals.mainInterval = setInterval(() => {
-            if (AppState.isRunning !== false) {
-                const now = Date.now();
-                const deltaMs = now - lastTickTime;
-                
-                if (deltaMs >= 1000) {
-                    const deltaSec = Math.floor(deltaMs / 1000);
-                    AppState.totalSeconds += deltaSec;
-                    if (AppState.state !== 'ROSC_ACTIVE') {
-                        AppState.arrestSeconds += deltaSec;
-                        if (AppState.isCompressing) AppState.compressingSeconds += deltaSec;
-                        else if (AppState.isVentilationPhase) AppState.ventilationSeconds = (AppState.ventilationSeconds || 0) + deltaSec;
-                    }
-                    
-                    const mainTimerEl = document.getElementById('main-timer');
-                    if (mainTimerEl) mainTimerEl.innerText = Utils.formatTime(AppState.totalSeconds);
-                    updateCCF(); 
-                    Utils.saveSession();
-                    lastTickTime += deltaSec * 1000;
-                }
-            } else {
-                lastTickTime = Date.now();
-            }
-        }, 200);
-    }
+        <!-- DISCLAIMER -->
+        <div class="absolute top-4 left-0 right-0 w-full px-4 z-[65] pointer-events-none">
+            <div id="medical-disclaimer" class="w-full max-w-sm mx-auto bg-red-50/95 backdrop-blur-sm border-2 border-red-500 rounded-2xl p-3 shadow-sm text-center pointer-events-auto">
+                <h2 class="text-red-700 font-black uppercase tracking-widest text-xs mb-1"><i class="fa-solid fa-triangle-exclamation text-red-600 mr-1.5"></i>Wichtiger Hinweis</h2>
+                <p class="text-red-800 text-[10px] font-bold leading-tight">Assistenz- & Trainingswerkzeug für med. Fachpersonal. Ersetzt keine ärztliche Entscheidung. Alle Dosierungen sind eigenverantwortlich zu prüfen. Nutzung auf eigene Gefahr.</p>
+            </div>
+        </div>
 
-    function activateDashboard(resetTimer = false) {
-        document.body.classList.add('dashboard-active');
-        const sats = document.getElementById('satellites'); if (sats) sats.classList.remove('hidden');
-        ['btn-airway', 'btn-cpr'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('opacity-0', 'pointer-events-none'); });
-        
-        // 🌟 FIX: CSS Layout Eclipse - Entfernt hartcodierte Opacity-0 Klassen von den Satelliten 🌟
-        document.querySelectorAll('.satellite-btn').forEach(b => b.classList.remove('opacity-0', 'pointer-events-none'));
-        
-        if (UI && typeof UI.recalcMeds === 'function') UI.recalcMeds();
-        AppState.isRunning = true;
-        if (CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') CPR.CPRTimer.start(resetTimer);
-        navHelper('RUNNING', 'view-timer', 'small');
-    }
-
-    function updateCCF() {
-        if (AppState.arrestSeconds === 0) return;
-        const rawCcf = (AppState.compressingSeconds / AppState.arrestSeconds) * 100;
-        const ccfDisplay = document.getElementById('ccf-display');
-        if (ccfDisplay) {
-            ccfDisplay.innerText = Math.min(100, Math.round(rawCcf)) + "%";
-            ccfDisplay.className = "text-2xl sm:text-3xl font-black " + (rawCcf >= 80 ? 'text-emerald-500' : 'text-[#E3000F]');
-        }
-    }
-
-    function showMainInterface() {
-        const ab = document.getElementById('btn-airway');
-        const cb = document.getElementById('btn-cpr');
-        if (ab) ab.style.opacity = '1';
-        if (cb) cb.style.opacity = '1';
-        
-        if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI();
-        if(window.CPR.MedsButton && typeof window.CPR.MedsButton.init === 'function') window.CPR.MedsButton.init();
-    }
-
-    window.CPR.onBeat = function() {
-        if (!AppState.isCompressing || AppState.isRunning === false) return;
-        
-        const btnCpr = document.getElementById('btn-cpr');
-        if (btnCpr && !AppState.isVentilationPhase) {
-            btnCpr.classList.replace('border-slate-100', 'border-red-500');
-            btnCpr.classList.add('shadow-[0_0_50px_rgba(227,0,15,0.85)]', 'bg-red-50');
-            setTimeout(() => {
-                btnCpr.classList.replace('border-red-500', 'border-slate-100');
-                btnCpr.classList.remove('shadow-[0_0_50px_rgba(227,0,15,0.85)]', 'bg-red-50');
-            }, 150);
-        }
-
-        if (AppState.cprMode !== 'continuous') {
-            AppState.compressionCount = (AppState.compressionCount || 0) + 1;
-            const limit = AppState.isPediatric ? 15 : 30;
-            const badge = document.getElementById('cpr-counter-badge');
-            if (badge) { badge.innerText = AppState.compressionCount; badge.classList.remove('hidden'); }
-            
-            const remainingComps = limit - AppState.compressionCount;
-            const badgeAw = document.getElementById('airway-countdown-badge');
-
-            if (remainingComps <= 5 && remainingComps > 0) {
-                if (badgeAw) {
-                    badgeAw.style.display = 'flex'; 
-                    badgeAw.innerText = remainingComps;
-                    badgeAw.classList.remove('hidden', 'bg-slate-800', 'border-white');
-                    badgeAw.classList.add('bg-amber-500', 'border-amber-100', 'animate-pulse');
-                }
-                if (remainingComps <= 3 && window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(20);
-            } else {
-                if (badgeAw) {
-                    badgeAw.style.display = 'none'; 
-                    badgeAw.classList.add('hidden');
-                    badgeAw.classList.remove('bg-amber-500', 'border-amber-100', 'animate-pulse');
-                    badgeAw.classList.add('bg-slate-800', 'border-white');
-                }
-            }
-
-            if (AppState.compressionCount >= limit) triggerVentilationPhase();
-        }
-    };
-
-    function triggerVentilationPhase() {
-        AppState.isCompressing = false; 
-        AppState.isVentilationPhase = true; 
-        AppState.compressionCount = 0; 
-        updateCprUI();
-
-        const glowBg = document.getElementById('aw-glow-bg');
-        if (glowBg) glowBg.className = 'absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500';
-
-        function doBreath(callback) {
-            if (AppState.isRunning === false || AppState.state === 'DECISION') return;
-            if (AudioEngine && typeof AudioEngine.playVentilationSound === 'function') AudioEngine.playVentilationSound();
-            if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(30);
-
-            if (glowBg) {
-                glowBg.style.opacity = '0.85';
-                glowBg.style.transform = 'scale(1.15)';
-                glowBg.style.backgroundColor = '#22d3ee'; 
-                glowBg.style.boxShadow = '0 0 30px rgba(34,211,238,0.7)';
-            }
-
-            setTimeout(() => {
-                if (glowBg) {
-                    glowBg.style.opacity = '0.1';
-                    glowBg.style.transform = 'scale(1)';
-                    glowBg.style.boxShadow = 'none';
-                }
-                setTimeout(callback, 500); 
-            }, 1000); 
-        }
-
-        doBreath(() => {
-            doBreath(() => {
-                if (AppState.isRunning && AppState.state !== 'DECISION') {
-                    if (glowBg) glowBg.style.opacity = '0';
-                    AppState.isVentilationPhase = false;
-                    AppState.isCompressing = true;
-                    updateCprUI();
-                }
-            });
-        });
-    }
-
-    function updateCprUI() {
-        const btnCpr = document.getElementById('btn-cpr');
-        const badge = document.getElementById('cpr-counter-badge');
-        const iconNormal = document.getElementById('cpr-icon-normal');
-        const iconPause = document.getElementById('cpr-icon-pause');
-        const iconVent = document.getElementById('cpr-icon-vent');
-        const mainText = document.getElementById('cpr-main-text');
-        const handsOffTimer = document.getElementById('cpr-hands-off-timer');
-        
-        if (Globals.pauseInterval) { clearInterval(Globals.pauseInterval); Globals.pauseInterval = null; }
-
-        // =========================================================================
-        // 🌟 NEU: SMART PROMPT LOGIK (INNER-HTML INJECTION FÜR GARANTIERTE SICHTBARKEIT)
-        // =========================================================================
-        const btnAw = document.getElementById('btn-airway');
-
-        if (!AppState.airwayEstablished) {
-            if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
-                // WARNUNG: Überschreibt den kompletten Button-Inhalt mit hartcodiertem HTML
-                if (btnAw && !btnAw.dataset.isWarning) {
-                    btnAw.dataset.isWarning = "true";
-                    btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
-                    btnAw.classList.remove('border-slate-100');
-                    
-                    btnAw.innerHTML = `
-                        <div class="absolute inset-0 bg-amber-400/20 animate-pulse rounded-[1.5rem]"></div>
-                        <div class="flex flex-col items-center justify-center w-full h-full relative z-10">
-                            <i class="fa-solid fa-lungs text-[26px] mb-1 text-amber-500"></i>
-                            <div class="flex flex-col items-center leading-none mt-0.5">
-                                <span class="text-[12px] font-black text-amber-600 tracking-tighter uppercase">Beatmung?</span>
+        <!-- TOP STATS -->
+        <div id="top-stats-container" class="opacity-0 pointer-events-none transition-opacity duration-300 w-full bg-slate-50 px-2 pt-2 pb-1 relative z-[40]">
+            <div id="top-stats" class="flex gap-2 w-full max-w-md mx-auto">
+                <div class="flex-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <div class="flex justify-between items-center border-b border-slate-50 pb-1 mb-1">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Zeit</span>
+                        <span id="start-time" class="text-xs text-slate-500 font-bold tracking-wide">--:--</span>
+                    </div>
+                    <div id="main-timer" class="text-3xl sm:text-4xl font-mono font-black tracking-tight text-slate-800 mt-1">00:00</div>
+                </div>
+                <div id="stat-ccf" class="flex-[1.5] bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center transition-all overflow-hidden">
+                    <div class="flex flex-col items-start w-full">
+                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Patient/Modus</span>
+                        <div class="flex gap-1 flex-wrap items-center">
+                            <button id="btn-pediatric-edit" class="hidden text-[9px] bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded-full font-black uppercase flex items-center gap-1 active:scale-95 shadow-sm transition-all animate-pulse">
+                                <i class="fa-solid fa-weight-scale"></i> <span id="pediatric-weight-display">FEHLT!</span>
+                            </button>
+                            <div id="btn-toggle-mode" class="relative flex items-center bg-amber-100 rounded-full p-[2px] cursor-pointer w-[92px] h-[28px] shadow-inner select-none border border-amber-200 transition-colors duration-300 shrink-0">
+                                <div id="mode-slider-thumb" class="absolute left-[2px] top-[2px] w-[43px] h-[22px] bg-white rounded-full shadow-sm transition-transform duration-300 border border-amber-200 z-0 translate-x-0"></div>
+                                <div id="mode-label-sync" class="flex-1 text-center text-[10px] font-black z-10 transition-colors duration-300 text-amber-700">30:2</div>
+                                <div id="mode-label-kont" class="flex-1 text-center text-[10px] font-black z-10 transition-colors duration-300 text-amber-400">KONT</div>
                             </div>
                         </div>
-                    `;
-                }
-            } else {
-                // IDLE: Grauer Standard (Aber mit unserem schönen Icon)
-                if (btnAw && btnAw.dataset.isWarning) {
-                    delete btnAw.dataset.isWarning;
-                    btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
-                    btnAw.classList.add('border-slate-100');
+                    </div>
+                    <div class="flex flex-col items-end shrink-0 pl-2 border-l border-slate-100 min-w-[50px]">
+                        <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">CCF</span>
+                        <div id="ccf-display" class="text-2xl sm:text-3xl font-black text-slate-300 tracking-tight leading-none">--%</div>
+                    </div>
+                </div>
+                <div id="stat-rosc" class="hidden flex-[1.5] bg-emerald-100 p-2.5 rounded-xl border border-emerald-300 shadow-sm justify-between items-center transition-all">
+                    <div class="flex flex-col items-start">
+                        <span class="text-[9px] font-black text-emerald-700 uppercase tracking-widest flex items-center gap-1"><i class="fa-solid fa-heart-pulse"></i> Stabilisierung</span>
+                    </div>
+                    <div id="rosc-timer-display" class="text-2xl sm:text-3xl font-mono font-black tracking-tight text-emerald-800 leading-none mt-1">00:00</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CPR INTERFACE (Mathematisch auf den Grid-Nullpunkt zentriert) -->
+    <main id="cpr-interface" class="flex-1 relative z-20 w-full">
+        
+        <div id="orbit-wrapper" class="absolute inset-0 flex items-center justify-center pointer-events-none z-[55]">
+            <div class="relative flex items-center justify-center">
+                
+                <div id="satellites" class="contents hidden">
                     
-                    btnAw.innerHTML = `
-                        <div id="aw-glow-bg" class="absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500 opacity-0"></div>
-                        <div id="airway-countdown-badge" class="hidden absolute top-0 right-0 -mt-2 -mr-2 bg-slate-800 text-white text-[10px] font-black rounded-full w-6 h-6 items-center justify-center border-2 border-white shadow-sm z-20 transition-all duration-300 transform scale-110"></div>
+                    <button id="btn-adrenalin" class="satellite-btn pointer-events-auto bg-white border-2 border-red-100 rounded-full shadow-lg text-slate-500 relative" data-dose="1 mg">
+                        <canvas id="adr-progress-circle" width="100" height="100" class="absolute inset-0 w-full h-full pointer-events-none z-10" style="transform: rotate(-90deg); opacity: 0; transition: opacity 0.2s;"></canvas>
+                        <div id="adr-inner" class="flex flex-col items-center justify-center w-full h-full pointer-events-none absolute inset-0 z-20" style="opacity: 1; transition: opacity 0.2s;">
+                            <i id="adr-icon" class="fa-solid fa-syringe text-[24px] mb-0.5 text-slate-400 transition-colors"></i>
+                            <span id="adr-text-2" class="text-[12px] font-extrabold tracking-wide mt-1 text-slate-700 leading-tight whitespace-nowrap">1 mg</span>
+                        </div>
+                        <div id="adr-timer" class="absolute inset-0 items-center justify-center text-xl font-black text-slate-700 tracking-tighter pointer-events-none z-30 rounded-full bg-white/60 backdrop-blur-[1px] drop-shadow-sm" style="display: none;">04:00</div>
+                        <div id="adr-count-badge" class="absolute -top-2 -right-2 bg-[#E3000F] text-white text-[12px] font-black px-2 min-w-[26px] h-7 items-center justify-center rounded-full shadow-md border-2 border-white z-40" style="display: none;"></div>
+                    </button>
+                    
+                    <button id="btn-meds-menu" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-purple-100 rounded-full shadow-lg text-slate-500">
                         <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
-                            <i id="aw-icon" class="fa-solid fa-lungs text-[26px] mb-1 text-slate-400 transition-colors duration-300"></i>
-                            <div class="flex flex-col items-center leading-none mt-0.5 max-w-[85px] px-1 overflow-hidden">
-                                <span id="airway-label" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter truncate w-full text-center transition-colors">Atemweg</span>
+                            <i class="fa-solid fa-capsules text-[24px] mb-1 text-slate-400"></i>
+                            <div class="flex flex-col items-center leading-none mt-0.5 w-full px-1">
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Meds</span>
+                                <span class="text-[11px] font-black text-purple-700 uppercase tracking-tight mt-0.5">Amio.</span>
                             </div>
                         </div>
-                    `;
-                }
-            }
-        } else {
-            // ATEMWEG ETABLIERT: Setzt das normale Layout zurück (mit dem gespeicherten Atemweg-Namen)
-            if (btnAw && btnAw.dataset.isWarning) {
-                delete btnAw.dataset.isWarning;
-                btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
-                btnAw.classList.add('border-slate-100');
+                    </button>
+                    
+                    <button id="btn-toggle-hits" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-slate-200 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <span class="text-[16px] font-black uppercase tracking-[0.1em] leading-none mb-1 text-slate-600">HITS</span>
+                            <span class="text-[9px] font-semibold uppercase tracking-[0.15em] text-slate-400">Anamnese</span>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-rosc-end" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-slate-200 rounded-full shadow-lg text-slate-600">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <i class="fa-solid fa-flag-checkered text-[24px] mb-1 text-slate-400"></i>
+                            <span class="text-[12px] font-black leading-tight uppercase mt-1 text-slate-700 pointer-events-none text-center">Ende<br>ROSC</span>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-toggle-protocol" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-slate-200 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-1 text-slate-400"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1 2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="M9 14h6"></path><path d="M9 18h6"></path><path d="M9 10h6"></path></svg>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mt-1">Log</span>
+                        </div>
+                    </button>
+                    
+                    <button id="btn-zugang-menu" class="satellite-btn pointer-events-auto opacity-0 bg-white border-2 border-indigo-100 rounded-full shadow-lg text-slate-500">
+                        <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
+                            <i class="fa-solid fa-droplet text-[24px] mb-1 text-slate-400"></i>
+                            <span id="zugang-label" class="text-[12px] font-extrabold uppercase tracking-wide mt-1 whitespace-nowrap">Zugang</span>
+                        </div>
+                    </button>
+                </div>
                 
-                const currentLabel = Globals.tempAirwayType || "Atemweg";
-                
-                btnAw.innerHTML = `
-                    <div id="aw-glow-bg" class="absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500 opacity-0"></div>
-                    <div id="airway-countdown-badge" class="hidden absolute top-0 right-0 -mt-2 -mr-2 bg-slate-800 text-white text-[10px] font-black rounded-full w-6 h-6 items-center justify-center border-2 border-white shadow-sm z-20 transition-all duration-300 transform scale-110"></div>
+                <button id="btn-airway" class="pointer-events-auto opacity-0 bg-white border-2 border-cyan-100 flex flex-col items-center justify-center text-slate-500 relative select-none shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+                    <div id="aw-glow-bg" class="absolute inset-0 w-full h-full bg-cyan-300 opacity-0 pointer-events-none rounded-full transition-opacity duration-150"></div>
                     <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
-                        <i id="aw-icon" class="fa-solid fa-lungs text-[26px] mb-1 text-slate-400 transition-colors duration-300"></i>
-                        <div class="flex flex-col items-center leading-none mt-0.5 max-w-[85px] px-1 overflow-hidden">
-                            <span id="airway-label" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter truncate w-full text-center transition-colors">${currentLabel}</span>
+                        <i id="aw-icon" class="fa-solid fa-lungs text-[32px] mb-1 text-slate-400"></i>
+                        <span id="airway-label" class="text-[12px] font-extrabold uppercase tracking-wide mt-1 whitespace-nowrap">Atemweg</span>
+                    </div>
+                    <span id="airway-countdown-badge" class="hidden absolute -top-2 -right-2 bg-slate-800 text-white text-[12px] font-black px-2 min-w-[26px] h-7 flex items-center justify-center rounded-full shadow-md border-2 border-white z-30 transition-colors"></span>
+                </button>
+                
+                <button id="btn-cpr" data-state="bereit" class="pointer-events-auto opacity-0 bg-white border-4 border-slate-100 flex flex-col items-center justify-center text-slate-500 relative select-none shadow-[0_8px_30px_rgb(0,0,0,0.1)]">
+                    <span id="cpr-counter-badge" class="hidden absolute -top-2 -right-2 text-white font-medium px-2 min-w-[24px] h-6 flex items-center justify-center rounded-full shadow-sm border border-white/50 z-30 bg-slate-700/85 backdrop-blur-sm text-[11px] transition-all">0</span>
+                    <span id="cpr-hands-off-timer" class="hidden absolute -bottom-3 left-1/2 -translate-x-1/2 bg-slate-700/85 backdrop-blur-sm text-white text-[10px] font-medium px-3 py-1 rounded-full shadow-sm border border-white/50 z-30 whitespace-nowrap tracking-widest transition-all duration-300">0s Pause</span>
+                    
+                    <i id="cpr-icon-normal" class="fa-solid fa-play text-3xl mb-1 pointer-events-none text-emerald-500 transition-all duration-300"></i>
+                    <i id="cpr-icon-pause" class="fa-solid fa-pause text-3xl hidden mb-1 pointer-events-none text-slate-400 transition-all duration-300"></i>
+                    <i id="cpr-icon-vent" class="fa-solid fa-lungs text-3xl hidden mb-1 pointer-events-none text-cyan-600 transition-all duration-300"></i>
+                    
+                    <span id="cpr-main-text" class="text-[12px] font-bold tracking-wide uppercase pointer-events-none whitespace-nowrap mt-1 text-slate-600 transition-colors">CPR START</span>
+                </button>
+                
+                <!-- 🌟 ZENTRALER KREIS (Das Master Layout) 🌟 -->
+                <div id="main-btn-area" style="width: 330px; height: 330px;" class="rounded-full bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] cursor-pointer z-30 transition-all duration-500 overflow-hidden relative pointer-events-auto flex items-center justify-center">
+                    
+                    <canvas id="progress-circle" width="330" height="330" class="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-500 z-10 opacity-0" style="transform: rotate(-90deg);"></canvas>
+                    
+                    <!-- 🌟 ROLLE RÜCKWÄRTS: ONBOARDING WIEDER 100% STABIL (Absolute Positionierung) 🌟 -->
+                    <div id="view-ob-1" class="absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none drop-shadow-sm">Patient wählen</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <button id="btn-start-adult" class="w-[85%] max-w-[300px] h-[60px] bg-white text-slate-700 rounded-full font-black uppercase tracking-[0.2em] text-[15px] shadow-[0_8px_25px_rgba(0,0,0,0.04)] border border-slate-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-4 hover:shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+                                <i class="fa-solid fa-person text-3xl text-slate-400 pointer-events-none"></i> 
+                                <span class="pointer-events-none">Erwachsener</span>
+                            </button>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center">
+                            <button id="btn-start-child" class="w-[85%] max-w-[300px] h-[60px] bg-indigo-50/80 text-indigo-700 rounded-full font-black uppercase tracking-[0.2em] text-[15px] shadow-[0_8px_25px_rgba(79,70,229,0.05)] border border-indigo-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-4 hover:shadow-[0_10px_30px_rgba(79,70,229,0.09)]">
+                                <i class="fa-solid fa-child text-3xl text-indigo-400 pointer-events-none"></i> 
+                                <span class="pointer-events-none">Kind</span>
+                            </button>
                         </div>
                     </div>
-                `;
-            }
-        }
-        // =========================================================================
 
-        if (btnCpr) {
-            btnCpr.classList.remove('bg-amber-50', 'bg-red-50', 'pause-warning', 'animate-pulse', 'border-red-600', 'border-amber-400', 'shadow-[0_0_60px_rgba(227,0,15,0.9)]', 'shadow-[0_0_80px_rgba(227,0,15,1)]', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'scale-110');
-            btnCpr.classList.add('bg-white', 'text-slate-700', 'border-slate-100');
-        }
-        if (iconNormal) {
-            iconNormal.classList.remove('text-amber-500', 'text-red-600', 'drop-shadow-[0_0_15px_rgba(227,0,15,0.9)]', 'drop-shadow-[0_0_20px_rgba(227,0,15,1)]', 'scale-110');
-            iconNormal.classList.add('text-emerald-500');
-        }
-        if (mainText) {
-            mainText.classList.remove('text-amber-600', 'text-red-600');
-            mainText.classList.add('text-slate-600');
-        }
-        if (handsOffTimer) {
-            handsOffTimer.classList.remove('bg-amber-500/90', 'bg-red-600/90');
-            handsOffTimer.classList.add('bg-slate-700/85', 'hidden');
-        }
+                    <!-- INIT BEATMUNGEN -->
+                    <div id="view-initial-breaths" class="hidden absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[25px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none text-center leading-tight drop-shadow-sm">5 Initiale<br>Beatmungen</span>
+                        </div>
+                        <div class="absolute top-[75px] w-full flex justify-center pointer-events-none">
+                            <div class="w-12 h-12 bg-cyan-50 border border-cyan-100 text-cyan-600 rounded-full flex items-center justify-center shadow-sm"><i class="fa-solid fa-lungs text-xl"></i></div>
+                        </div>
+                        <div class="absolute top-[135px] w-full flex justify-center pointer-events-auto">
+                            <button id="btn-breaths-done" class="w-[85%] max-w-[300px] h-[60px] bg-cyan-50/80 text-cyan-700 rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(6,182,212,0.04)] border border-cyan-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_10px_30px_rgba(6,182,212,0.08)]">
+                                <i class="fa-solid fa-lungs text-2xl text-cyan-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Durchgeführt</span>
+                            </button>
+                        </div>
+                        <div class="absolute top-[205px] w-full flex justify-center">
+                            <button id="btn-breaths-skipped" class="w-[85%] max-w-[300px] h-[60px] bg-white text-slate-400 rounded-full font-bold uppercase tracking-[0.25em] text-[13px] shadow-[0_5px_15px_rgba(0,0,0,0.03)] border border-slate-100 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 hover:shadow-[0_8px_20px_rgba(0,0,0,0.05)]">
+                                <span class="pointer-events-none">Überspringen</span>
+                            </button>
+                        </div>
+                    </div>
 
-        if (AppState.isCompressing && AppState.isRunning !== false) {
-            AppState.isVentilationPhase = false;
-            if (iconNormal) iconNormal.classList.add('hidden');
-            if (iconVent) iconVent.classList.add('hidden');
-            if (iconPause) { iconPause.classList.remove('hidden', 'text-red-600'); iconPause.classList.add('text-slate-400'); }
-            if (mainText) mainText.innerText = "CPR PAUSIEREN";
-            
-            if (badge) {
-                if (AppState.cprMode !== 'continuous' && AppState.compressionCount > 0) { badge.innerText = AppState.compressionCount; badge.classList.remove('hidden'); } 
-                else { badge.classList.add('hidden'); }
-            }
-            
-            if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            if (window.CPR.AudioContext && window.CPR.AudioContext.ctx) window.CPR.AudioContext.nextNoteTime = window.CPR.AudioContext.ctx.currentTime + 0.05;
-            if (AudioEngine && typeof AudioEngine.scheduler === 'function') AudioEngine.scheduler();
-            
-            if (AppState.cprMode === 'continuous' && AppState.airwayEstablished === true && window.CPR.AirwayTimer) {
-                window.CPR.AirwayTimer.start();
-            } else if (window.CPR.AirwayTimer) {
-                window.CPR.AirwayTimer.stop();
-            }
+                    <!-- CPR START -->
+                    <div id="view-ob-2" class="hidden absolute inset-0 w-full h-full z-20 pointer-events-none bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none text-center leading-tight drop-shadow-sm">Kompression<br>gestartet?</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <div id="ob-timer-display" class="text-[56px] font-mono font-black text-slate-700 tracking-tighter leading-none">00:00</div>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center pointer-events-auto">
+                            <span id="btn-confirm-cpr" class="w-[85%] max-w-[300px] h-[60px] bg-red-50 text-[#E3000F] rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(227,0,15,0.05)] border border-red-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 animate-pulse cursor-pointer hover:shadow-[0_10px_30px_rgba(227,0,15,0.08)]">
+                                <i class="fa-solid fa-check-double text-2xl text-red-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Bestätigen</span>
+                            </span>
+                        </div>
+                    </div>
 
-        } else if (AppState.isVentilationPhase) {
-            if (iconNormal) iconNormal.classList.add('hidden');
-            if (iconPause) iconPause.classList.add('hidden');
-            if (iconVent) iconVent.classList.remove('hidden');
-            if (mainText) mainText.innerText = "BEATMEN";
-            if (badge) badge.classList.add('hidden');
-            
-            if (window.CPR.AirwayTimer) window.CPR.AirwayTimer.stop();
-
-        } else {
-            if (iconVent) iconVent.classList.add('hidden');
-            if (iconPause) iconPause.classList.add('hidden');
-            if (iconNormal) iconNormal.classList.remove('hidden');
-            if (mainText) mainText.innerText = "CPR FORTSETZEN";
-            if (badge) badge.classList.add('hidden');
-            
-            if (window.CPR.AirwayTimer) window.CPR.AirwayTimer.stop();
-            
-            const st = AppState.state || 'IDLE';
-            if (st !== 'IDLE' && !st.startsWith('OB_') && st !== 'END' && st !== 'ROSC_ACTIVE') {
-                Globals.pauseSeconds = 0; let pauseStartTime = Date.now(); let lastVibratedSecond = -1; 
-                if (handsOffTimer) { handsOffTimer.innerText = "0s Pause"; handsOffTimer.classList.remove('hidden'); }
-
-                Globals.pauseInterval = setInterval(() => {
-                    if (AppState.isRunning !== false) {
-                        Globals.pauseSeconds = Math.floor((Date.now() - pauseStartTime) / 1000);
-                        if (handsOffTimer) handsOffTimer.innerText = Globals.pauseSeconds + "s Pause";
+                    <!-- ANALYSE -->
+                    <div id="view-ob-3" class="hidden absolute inset-0 w-full h-full z-20 pointer-events-none overflow-hidden rounded-full bg-white">
+                        <div class="absolute inset-0 w-full h-full pointer-events-none z-0" style="clip-path:polygon(70% 0%, 15% 55%, 45% 55%, 30% 100%, 85% 45%, 55% 45%);background:repeating-linear-gradient(-45deg, rgba(227,0,15,0.08) 0px, rgba(227,0,15,0.08) 4px, transparent 4px, transparent 8px);transform:scale(1.5);"></div>
+                        <div class="absolute top-[35px] w-full flex justify-center z-10">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] bg-white/90 px-4 py-1 rounded-full pointer-events-none drop-shadow-sm">Initiale Analyse</span>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center z-10 pointer-events-auto">
+                            <div class="w-[85%] max-w-[300px] h-[60px] bg-white text-[#E3000F] rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(227,0,15,0.06)] border border-red-100 transition-all duration-300 flex items-center justify-center gap-3 animate-pulse cursor-pointer active:scale-95">
+                                <i class="fa-solid fa-bolt text-2xl text-red-300"></i> 
+                                <span>Hier drücken</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- ENTSCHEIDUNG -->
+                    <div id="view-decision" class="hidden absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none drop-shadow-sm">Rhythmus ist:</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <button id="btn-shockable" class="w-[85%] max-w-[300px] h-[60px] bg-red-50 text-[#E3000F] rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(227,0,15,0.05)] border border-red-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_10px_30px_rgba(227,0,15,0.08)]">
+                                <i class="fa-solid fa-bolt text-2xl text-red-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Schockbar</span>
+                            </button>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center">
+                            <button id="btn-non-shockable" class="w-[85%] max-w-[300px] h-[60px] bg-white text-slate-600 rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_8px_25px_rgba(0,0,0,0.03)] border border-slate-200 active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] hover:border-slate-300">
+                                <i class="fa-solid fa-wave-square text-2xl text-slate-400 pointer-events-none"></i>
+                                <span class="pointer-events-none">Nicht Schockbar</span>
+                            </button>
+                        </div>
                         
-                        if (Globals.pauseSeconds >= 10) {
-                            if (btnCpr) { btnCpr.classList.add('bg-red-50', 'border-red-600', 'animate-pulse', 'shadow-[0_0_80px_rgba(227,0,15,1)]', 'scale-110'); btnCpr.classList.remove('bg-amber-50', 'bg-white', 'border-amber-400', 'border-slate-100'); }
-                            if (handsOffTimer) { handsOffTimer.classList.remove('bg-slate-700/85', 'bg-amber-500/90'); handsOffTimer.classList.add('bg-red-600/90'); }
-                            if (iconNormal) { iconNormal.classList.remove('text-emerald-500', 'text-amber-500'); iconNormal.classList.add('text-red-600', 'drop-shadow-[0_0_20px_rgba(227,0,15,1)]', 'scale-110'); }
-                            if (mainText) { mainText.classList.remove('text-slate-600', 'text-amber-600'); mainText.classList.add('text-red-600'); }
-                            if (Globals.pauseSeconds % 2 === 0 && lastVibratedSecond !== Globals.pauseSeconds) { Utils.vibrate([150, 50, 150]); lastVibratedSecond = Globals.pauseSeconds; }
-                        } else if (Globals.pauseSeconds >= 5) {
-                            if (btnCpr) { btnCpr.classList.add('bg-amber-50', 'border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]'); btnCpr.classList.remove('bg-white', 'border-slate-100'); }
-                            if (handsOffTimer) { handsOffTimer.classList.remove('bg-slate-700/85'); handsOffTimer.classList.add('bg-amber-500/90'); }
-                            if (iconNormal) { iconNormal.classList.remove('text-emerald-500', 'text-amber-500'); iconNormal.classList.add('text-amber-500'); }
-                            if (mainText) { mainText.classList.remove('text-slate-600'); mainText.classList.add('text-amber-600'); }
-                            if (Globals.pauseSeconds === 5 && lastVibratedSecond !== Globals.pauseSeconds) { Utils.vibrate(50); lastVibratedSecond = Globals.pauseSeconds; }
-                        }
-                    } else { pauseStartTime = Date.now() - (Globals.pauseSeconds * 1000); }
-                }, 200);
-            }
-        }
-    }
+                        <!-- NEUE GEOMETRIE (w-[60%] und bottom-[35px]) BEI ALTEM LAYOUT -->
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-decision-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- CPR RESUME -->
+                    <div id="view-cpr-resume" class="hidden absolute inset-0 w-full h-full z-20 bg-white">
+                        <div class="absolute top-[35px] w-full flex justify-center">
+                            <span class="text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] pointer-events-none drop-shadow-sm">CPR Fortsetzen</span>
+                        </div>
+                        <div class="absolute top-[105px] w-full flex justify-center">
+                            <i class="fa-solid fa-heart-pulse text-6xl text-red-100 animate-pulse pointer-events-none"></i>
+                        </div>
+                        <div class="absolute top-[195px] w-full flex justify-center pointer-events-auto">
+                            <button id="btn-confirm-resume" class="w-[85%] max-w-[300px] h-[60px] bg-[#E3000F] text-white rounded-full font-black uppercase tracking-[0.15em] text-[15px] shadow-[0_10px_30px_rgba(227,0,15,0.3)] border border-[#E3000F] active:scale-95 transition-all duration-300 flex items-center justify-center gap-3 hover:shadow-[0_12px_35px_rgba(227,0,15,0.4)]">
+                                <i class="fa-solid fa-play text-2xl text-white/90 pointer-events-none"></i>
+                                <span class="pointer-events-none">Bestätigen</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- TIMER VIEW -->
+                    <div id="view-timer" class="hidden absolute inset-0 w-full h-full z-20 pointer-events-none rounded-full">
+                        <!-- Wird via app.js dynamisch gefüllt -->
+                    </div>
+                    
+                    <!-- JOULE -->
+                    <div id="view-joule" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex-col items-center justify-center pointer-events-none">
+                        <span class="absolute top-[35px] w-full text-center text-[16px] font-black text-slate-700 uppercase tracking-[0.25em] drop-shadow-sm">Energie wählen</span>
+                        <div id="joule-container" class="flex flex-col w-[85%] pointer-events-auto z-10"></div>
+                        
+                        <span class="absolute bottom-[75px] w-full text-center text-[10px] font-bold text-red-500 uppercase tracking-[0.2em] animate-pulse">
+                            <i class="fa-solid fa-bolt mr-1"></i> Nach Schock bestätigen
+                        </span>
+                        
+                        <!-- NEUE GEOMETRIE (w-[60%] und bottom-[35px]) BEI ALTEM LAYOUT -->
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-joule-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- MEDIKAMENTE MENÜ (Flexbox Premium, Bottom-Save) -->
+                    <div id="view-meds-menu" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[14px] font-black text-slate-700 uppercase tracking-[0.25em] mb-2 pointer-events-none shrink-0 drop-shadow-sm">Medikamente</span>
+                        <div class="w-[85%] mx-auto h-[160px] overflow-y-auto custom-scrollbar px-1 pb-10 pointer-events-auto">
+                            <div id="amio-container" class="grid grid-cols-2 gap-2 w-full mb-3 border-b border-slate-100 pb-3"></div>
+                            <div id="sonstige-container" class="grid grid-cols-2 gap-2 w-full"></div>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-meds-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 🌟 PREMIUM ATEMWEG MENÜ 🌟 -->
+                    <div id="view-airway" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[13px] font-black text-slate-700 uppercase tracking-[0.25em] mb-2 pointer-events-none shrink-0 drop-shadow-sm">Atemweg</span>
+                        
+                        <div id="pediatric-airway-info" class="hidden w-[85%] bg-cyan-50 border border-cyan-200 rounded-xl p-2 mb-2 text-left shadow-sm shrink-0">
+                            <span class="text-[9px] font-black text-cyan-700 uppercase tracking-widest block mb-1 border-b border-cyan-100 pb-1 flex justify-between items-center pointer-events-none">
+                                <span>Material (<span id="airway-info-kg">--</span>)</span>
+                                <i class="fa-solid fa-baby text-cyan-500 text-sm"></i>
+                            </span>
+                            <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[9px] font-bold text-slate-600 pointer-events-none">
+                                <div class="flex justify-between"><span>Tubus:</span> <span id="airway-info-tubus" class="text-slate-900 font-black">--</span></div>
+                                <div class="flex justify-between"><span>Tiefe:</span> <span id="airway-info-tiefe" class="text-slate-900 font-black">--</span></div>
+                                <div class="flex justify-between"><span>Wendel:</span> <span id="airway-info-wendel" class="text-slate-900 font-black">--</span></div>
+                                <div class="flex justify-between"><span>Guedel:</span> <span id="airway-info-guedel" class="text-slate-900 font-black">--</span></div>
+                            </div>
+                        </div>
+                        
+                        <div id="airway-buttons-container" class="grid grid-cols-2 gap-1.5 w-[85%] mt-1 shrink-0 pointer-events-auto"></div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex gap-1.5 z-50 pointer-events-auto">
+                            <button id="btn-airway-cancel" class="bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                            <button id="btn-airway-edit-doc" class="bg-blue-50 border border-blue-200 text-blue-700 py-2.5 rounded-full flex-1 hidden active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all">Doku</button>
+                            <button id="btn-airway-remove" class="bg-red-50 border border-red-200 text-red-700 py-2.5 rounded-full flex-1 hidden active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all">Entf.</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 🌟 PREMIUM ATEMWEG DOKU MENÜ 🌟 -->
+                    <div id="view-airway-doc" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[13px] font-black text-slate-700 uppercase tracking-[0.25em] mb-3 shrink-0 drop-shadow-sm">Details (<span id="doc-airway-type"></span>)</span>
+                        
+                        <div class="w-[80%] flex flex-col gap-2 pointer-events-auto">
+                            <div class="flex gap-2 w-full">
+                                <input type="text" id="aw-size" placeholder="Größe" class="w-1/2 bg-slate-50 border border-slate-200 py-2 px-2 text-[11px] font-bold text-slate-700 text-center rounded-xl outline-none focus:border-cyan-400 shadow-sm transition-all">
+                                <input type="text" id="aw-depth" placeholder="Tiefe" class="w-1/2 bg-slate-50 border border-slate-200 py-2 px-2 text-[11px] font-bold text-slate-700 text-center rounded-xl outline-none focus:border-cyan-400 shadow-sm transition-all">
+                            </div>
+                            
+                            <div class="relative w-full">
+                                <input type="number" id="aw-cuff" placeholder="Cuff" value="25" class="w-full bg-slate-50 border border-slate-200 py-2 px-4 text-[11px] font-bold text-slate-700 text-center rounded-xl outline-none focus:border-cyan-400 shadow-sm transition-all pr-12">
+                                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">mbar</span>
+                            </div>
 
-    function updatePediRoscVitals() {
-        const vitalsCard = document.getElementById('pedi-rosc-vitals');
-        if (!vitalsCard) return;
-        if (AppState.isPediatric && AppState.patientWeight) {
-            const kg = AppState.patientWeight;
-            let age = 0; if (kg >= 10) age = Math.max(1, Math.round((kg / 2) - 4));
-            let rr = "> 70 mmHg"; if (age >= 1 && age <= 10) rr = `> ${70 + (2 * age)} mmHg`; else if (age > 10) rr = "> 90 mmHg";
-            let hr = "110 - 160 /min"; if (age >= 1 && age < 2) hr = "100 - 150 /min"; else if (age >= 2 && age < 5) hr = "90 - 140 /min"; else if (age >= 5 && age <= 12) hr = "80 - 120 /min"; else if (age > 12) hr = "60 - 100 /min";
-            let vt = Math.round(kg * 6) + " ml";
-            
-            const elKg = document.getElementById('pedi-rosc-kg'); if (elKg) elKg.innerText = kg + " kg";
-            const elRr = document.getElementById('pedi-rosc-rr'); if (elRr) elRr.innerText = rr;
-            const elHr = document.getElementById('pedi-rosc-hr'); if (elHr) elHr.innerText = hr;
-            const elVt = document.getElementById('pedi-rosc-vt'); if (elVt) elVt.innerText = "~ " + vt;
-            vitalsCard.classList.remove('hidden');
-        } else { vitalsCard.classList.add('hidden'); }
-    }
+                            <div class="text-[9px] font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded-xl border border-emerald-200 w-full shadow-sm mt-1 leading-tight">
+                                <i class="fa-solid fa-check-double mr-1"></i> EtCO2 & Cuff<br>prüfen!
+                            </div>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex gap-2 z-50 pointer-events-auto">
+                            <button id="btn-airway-doc-cancel" class="bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                            <button id="btn-airway-doc-save" class="bg-cyan-50 border border-cyan-200 text-cyan-700 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:shadow-md">Speich.</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 🌟 PREMIUM ZUGANG MENÜ 🌟 -->
+                    <div id="view-zugang" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center">
+                        <span class="text-[14px] font-black text-slate-700 uppercase tracking-[0.25em] mb-2 pointer-events-none shrink-0 drop-shadow-sm">Zugang</span>
+                        
+                        <div class="w-[80%] flex flex-col gap-1.5 pointer-events-auto">
+                            <!-- TYP -->
+                            <div class="relative w-full">
+                                <select id="zugang-typ" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm cursor-pointer text-left">
+                                    <option value="i.v.">💉 i.v. (Intravenös)</option>
+                                    <option value="i.o.">🦴 i.o. (Intraossär)</option>
+                                </select>
+                                <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] pointer-events-none"></i>
+                            </div>
+                            
+                            <!-- GRÖSSE -->
+                            <div class="relative w-full">
+                                <select id="zugang-groesse" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm cursor-pointer text-left">
+                                    <optgroup label="i.v. Farben">
+                                        <option value="Grün (18G)" selected>🟢 Grün (18G)</option>
+                                        <option value="Rosa (20G)">🌸 Rosa (20G)</option>
+                                        <option value="Blau (22G)">🔵 Blau (22G)</option>
+                                        <option value="Gelb (24G)">🟡 Gelb (24G)</option>
+                                        <option value="Weiß (17G)">⚪ Weiß (17G)</option>
+                                        <option value="Grau (16G)">🔘 Grau (16G)</option>
+                                        <option value="Orange (14G)">🟠 Orange (14G)</option>
+                                    </optgroup>
+                                    <optgroup label="i.o. Nadeln">
+                                        <option value="EZ-IO Pink">🟪 EZ-IO Pink (Kind)</option>
+                                        <option value="EZ-IO Blau">🟦 EZ-IO Blau (Erw.)</option>
+                                        <option value="EZ-IO Gelb">🟨 EZ-IO Gelb (Adipös)</option>
+                                    </optgroup>
+                                </select>
+                                <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] pointer-events-none"></i>
+                            </div>
+                            
+                            <!-- ORT -->
+                            <div class="relative w-full">
+                                <select id="zugang-ort" class="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm cursor-pointer text-left">
+                                    <optgroup label="i.v. Orte">
+                                        <option value="Handrücken" selected>📍 Handrücken</option>
+                                        <option value="Unterarm">📍 Unterarm</option>
+                                        <option value="Ellenbeuge">📍 Ellenbeuge</option>
+                                        <option value="Jugularis">📍 V. jugularis</option>
+                                    </optgroup>
+                                    <optgroup label="i.o. Orte">
+                                        <option value="Tibia prox.">📍 Tibia prox.</option>
+                                        <option value="Tibia dist.">📍 Tibia dist.</option>
+                                        <option value="Femur">📍 Femur</option>
+                                        <option value="Humerus">📍 Humerus</option>
+                                    </optgroup>
+                                </select>
+                                <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] pointer-events-none"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex gap-2 z-50 pointer-events-auto">
+                            <button id="btn-zugang-cancel" class="bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                            <button id="btn-zugang-save" class="bg-indigo-50 border border-indigo-200 text-indigo-700 py-2.5 rounded-full flex-1 active:scale-95 text-[9px] font-bold uppercase tracking-wider shadow-sm transition-all hover:shadow-md">Speich.</button>
+                        </div>
+                    </div>
+                    
+                    <!-- ROSC / ENDE -->
+                    <div id="view-rosc-end" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center pointer-events-none">
+                        <span class="text-[14px] font-black text-slate-700 uppercase tracking-[0.25em] mb-4 drop-shadow-sm">Einsatz beenden</span>
+                        
+                        <div class="w-[75%] flex flex-col gap-3">
+                            <button id="btn-opt-rosc" class="bg-emerald-50 border border-emerald-200 text-emerald-700 py-3.5 rounded-2xl shadow-sm w-full flex flex-col items-center justify-center active:scale-95 transition-all pointer-events-auto">
+                                <span class="text-[12px] font-black uppercase tracking-[0.2em] pointer-events-none">❤️ ROSC</span>
+                            </button>
+                            
+                            <button id="btn-opt-abbruch" class="bg-white border border-slate-200 text-slate-700 py-3.5 rounded-2xl shadow-sm w-full flex flex-col items-center justify-center active:scale-95 transition-all pointer-events-auto hover:bg-slate-50">
+                                <span class="text-[12px] font-black uppercase tracking-[0.2em] pointer-events-none">🛑 Abbruch</span>
+                            </button>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-rosc-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                    
+                    <!-- ABBRUCH GRUND -->
+                    <div id="view-abbruch-reason" class="hidden absolute inset-0 w-full h-full z-20 bg-white rounded-full flex flex-col items-center justify-start pt-10 text-center pointer-events-auto">
+                        <span class="text-[12px] font-black text-slate-700 uppercase tracking-[0.2em] mb-2 drop-shadow-sm">Grund für Abbruch</span>
+                        
+                        <div class="flex flex-col gap-1.5 w-[80%]">
+                            <button id="btn-reason-team" class="bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl shadow-sm w-full active:scale-95 text-[11px] font-bold uppercase tracking-wider transition-all hover:bg-slate-50">Teamentscheidung</button>
+                            <button id="btn-reason-family" class="bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl shadow-sm w-full active:scale-95 text-[11px] font-bold uppercase tracking-wider transition-all hover:bg-slate-50">Angehörige</button>
+                            <button id="btn-reason-doc" class="bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl shadow-sm w-full active:scale-95 text-[11px] font-bold uppercase tracking-wider transition-all hover:bg-slate-50">Patientenverfügung</button>
+                        </div>
+                        
+                        <div class="absolute bottom-[35px] left-1/2 -translate-x-1/2 w-[60%] flex z-50 pointer-events-auto">
+                            <button id="btn-abbruch-cancel" class="w-full bg-white border border-slate-200 text-slate-500 py-2.5 rounded-full active:scale-95 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-slate-300">Zurück</button>
+                        </div>
+                    </div>
+                </div>
 
-    function startRoscTimer() {
-        if (Globals.roscInterval) clearInterval(Globals.roscInterval);
-        Globals.roscSeconds = 0; let roscStartTime = Date.now();
-        Globals.roscInterval = setInterval(() => {
-            Globals.roscSeconds = Math.floor((Date.now() - roscStartTime) / 1000);
-            const roscTimer = document.getElementById('rosc-timer-display');
-            if (roscTimer) roscTimer.innerText = Utils.formatTime(Globals.roscSeconds);
-            Utils.saveSession();
-        }, 200);
-    }
+            </div>
+        </div>
+    </main>
 
-    function triggerDebrief(reason) {
-        Utils.vibrate(50); addLogEntry("EINSATZ BEENDET - " + reason); AppState.isRunning = false;
-        if (AppState.state !== 'ROSC_ACTIVE') AppState.state = 'END';
+    <!-- ROSC INTERFACE -->
+    <main id="rosc-interface" class="hidden flex-1 flex-col overflow-y-auto custom-scrollbar w-full bg-emerald-50 px-3 pt-3 pb-28 relative z-20">
+        <div class="flex gap-2 mb-3 shrink-0">
+            <button id="btn-rearrest" class="flex-1 bg-[#E3000F] text-white py-3 rounded-xl shadow-md font-black uppercase text-xs tracking-widest active:scale-95 flex flex-col items-center justify-center">RE-ARREST</button>
+            <button id="btn-rosc-exit" class="flex-1 bg-slate-800 text-white py-3 rounded-xl shadow-md font-black uppercase text-xs tracking-widest active:scale-95 flex flex-col items-center justify-center">EINSATZ ENDE</button>
+        </div>
         
-        if (Globals.pauseInterval) { clearInterval(Globals.pauseInterval); Globals.pauseInterval = null; }
-        if (Globals.roscInterval) { clearInterval(Globals.roscInterval); Globals.roscInterval = null; }
-        if (Globals.mainInterval) { clearInterval(Globals.mainInterval); Globals.mainInterval = null; }
-        if (CPR.CPRTimer && typeof CPR.CPRTimer.pause === 'function') CPR.CPRTimer.pause();
-        if (window.CPR.AirwayTimer) window.CPR.AirwayTimer.stop();
+        <div class="flex gap-2 mb-3 shrink-0">
+            <button id="btn-rosc-to-sampler" class="flex-1 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-xl shadow-sm font-bold uppercase text-[10px] tracking-widest active:scale-95 flex flex-col items-center justify-center"><i class="fa-solid fa-clipboard-list mb-1 text-slate-400"></i> SAMPLER / HITS</button>
+            <button id="btn-rosc-to-log" class="flex-1 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-xl shadow-sm font-bold uppercase text-[10px] tracking-widest active:scale-95 flex flex-col items-center justify-center"><i class="fa-solid fa-clock-rotate-left mb-1 text-slate-400"></i> LOGBUCH</button>
+        </div>
         
-        const arrSec = AppState.arrestSeconds || 0; const compSec = AppState.compressingSeconds || 0; const totSec = AppState.totalSeconds || 0;
-        const ccf = arrSec > 0 ? Math.min(100, Math.round((compSec / arrSec) * 100)) : 0;
-        const m = Math.floor(totSec / 60).toString().padStart(2, '0'); const s = (totSec % 60).toString().padStart(2, '0');
-        
-        const durEl = document.getElementById('debrief-duration'); if(durEl) durEl.innerText = m + ":" + s;
-        const ccfEl = document.getElementById('debrief-ccf'); if(ccfEl) ccfEl.innerText = ccf + "%";
-        const shocksEl = document.getElementById('debrief-shocks'); if(shocksEl) shocksEl.innerText = AppState.shockCount || 0;
-        const adrEl = document.getElementById('debrief-adr'); if(adrEl) adrEl.innerText = AppState.adrCount || 0;
+        <div id="pedi-rosc-vitals" class="hidden bg-cyan-50 border border-cyan-200 rounded-2xl p-4 mb-3 shadow-sm shrink-0">
+            <div class="flex justify-between items-center border-b border-cyan-100 pb-2 mb-2">
+                <span class="text-[10px] font-black text-cyan-700 uppercase tracking-widest flex items-center gap-1.5"><i class="fa-solid fa-baby text-cyan-500"></i> Pedi-Safe-Limits</span>
+                <span class="text-[10px] font-black text-cyan-600 bg-white px-2 py-0.5 rounded-md shadow-sm border border-cyan-100" id="pedi-rosc-kg">-- kg</span>
+            </div>
+            <div class="grid grid-cols-2 gap-y-3 gap-x-2">
+                <div><span class="block text-[8px] font-bold text-slate-500 uppercase tracking-widest">Ziel-RR (Syst.)</span><span id="pedi-rosc-rr" class="text-sm font-black text-slate-800">--</span></div>
+                <div><span class="block text-[8px] font-bold text-slate-500 uppercase tracking-widest">Norm-HF</span><span id="pedi-rosc-hr" class="text-sm font-black text-slate-800">--</span></div>
+                <div class="col-span-2 bg-white rounded-lg p-2 border border-cyan-100 flex justify-between items-center mt-1 shadow-sm">
+                    <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Tidalvolumen (6 ml/kg)</span>
+                    <span id="pedi-rosc-vt" class="text-[15px] font-black text-cyan-600">--</span>
+                </div>
+            </div>
+        </div>
 
-        const modal = document.getElementById('debriefing-modal');
-        if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
-        Utils.saveSession();
-    }
+        <div class="bg-white rounded-2xl shadow-sm px-4 py-4 mb-2 border border-emerald-100 shrink-0">
+            <h3 class="font-black text-emerald-700 uppercase tracking-wider mb-2 text-sm text-center border-b border-emerald-50 pb-2">Post-ROSC Bündel</h3>
+            <div id="rosc-container" class="flex flex-col gap-1.5 mt-2"></div>
+        </div>
+    </main>
 
-    function initHeaderEvents() {
-        addClick('btn-toggle-sound', () => {
-            Utils.vibrate(20); AppState.isSoundActive = !AppState.isSoundActive;
-            const ion = document.getElementById('icon-sound-on'); const ioff = document.getElementById('icon-sound-off');
-            if (ion && ioff) { ion.classList.toggle('hidden', !AppState.isSoundActive); ioff.classList.toggle('hidden', AppState.isSoundActive); }
-            addLogEntry("Sound " + (AppState.isSoundActive ? "AN" : "AUS")); Utils.saveSession();
-        });
-        addClick('btn-help', () => { Utils.vibrate(20); if (window.CPR.HelpOverlay && typeof window.CPR.HelpOverlay.toggle === 'function') window.CPR.HelpOverlay.toggle(); });
-        addClick('btn-settings', () => { Utils.vibrate(20); document.getElementById('settings-modal')?.classList.replace('hidden', 'flex'); });
-    }
+    <!-- LOGBUCH PANEL (Slide-Up) -->
+    <div id="protocol-panel" class="fixed bottom-0 left-0 right-0 w-full h-[95dvh] bg-white shadow-[0_-15px_50px_rgba(0,0,0,0.3)] z-[80] transform translate-y-full flex flex-col rounded-t-3xl overflow-hidden transition-transform duration-300">
+        <div class="flex flex-col px-5 py-4 border-b border-slate-200 bg-slate-50 shrink-0 gap-4 z-20">
+            <div class="flex justify-between items-center w-full">
+                <h3 class="font-black text-slate-800 uppercase tracking-wider text-lg">Protokoll</h3>
+                <button id="btn-close-log" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">Schließen</button>
+            </div>
+            <div class="flex justify-between items-center w-full">
+                <div class="flex bg-slate-200 p-1 rounded-xl">
+                    <button id="btn-view-timeline" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-slate-500 transition-all">Zeitlinie</button>
+                    <button id="btn-view-list" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-white text-slate-800 shadow-sm transition-all">Liste</button>
+                    <button id="btn-view-summary" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase text-slate-500 transition-all">Übergabe</button>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-undo-log" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-[12px] active:scale-95"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button id="btn-export-log" class="bg-[#E3000F] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-sm active:scale-95"><i class="fa-solid fa-download"></i></button>
+                </div>
+            </div>
+        </div>
+        <div id="protocol-list" class="flex-1 overflow-hidden bg-slate-50 flex flex-col custom-scrollbar relative"></div>
+    </div>
 
-    function initPatientSetupEvents() {
-        const sAge = document.getElementById('slider-age'); const sKg = document.getElementById('slider-kg'); const sCm = document.getElementById('slider-cm');
-        const valAge = document.getElementById('val-age'); const valKg = document.getElementById('val-kg'); const valCm = document.getElementById('val-cm');
+    <!-- HITS MODAL -->
+    <div id="hits-panel" class="fixed bottom-0 left-0 right-0 w-full h-[85vh] bg-white shadow-[0_-15px_50px_rgba(0,0,0,0.3)] z-[90] transform translate-y-full flex flex-col rounded-t-3xl overflow-hidden transition-transform duration-300">
+        <div class="flex flex-col px-5 py-4 border-b border-slate-200 bg-slate-50 shrink-0 gap-3 z-20">
+            <div class="flex justify-between items-center w-full">
+                <h3 class="font-black text-slate-800 uppercase tracking-wider text-lg">Zusatzinfos</h3>
+                <button id="btn-close-hits" class="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">Schließen</button>
+            </div>
+            <div class="flex bg-slate-200 p-1 rounded-xl w-full">
+                <button id="btn-tab-hits" class="flex-1 px-3 py-2 rounded-lg text-[11px] font-black uppercase bg-white text-slate-800 shadow-sm transition-all">HITS-Schema</button>
+                <button id="btn-tab-anamnese" class="flex-1 px-3 py-2 rounded-lg text-[11px] font-black uppercase text-slate-500 transition-all">SAMPLER</button>
+            </div>
+        </div>
+        <div id="view-hits" class="flex-1 overflow-y-auto p-4 gap-2.5 flex flex-col bg-slate-100 custom-scrollbar pb-10"></div>
+        <div id="view-anamnese" class="hidden flex-1 overflow-y-auto p-4 flex flex-col bg-slate-100 custom-scrollbar pb-10"></div>
+    </div>
 
-        function updateColorHighlight(kg) {
-            if (!broselowData) return;
-            let zone = broselowData.find(z => kg >= z.minKg && kg <= z.maxKg) || broselowData[broselowData.length - 1];
-            document.querySelectorAll('.broselow-btn').forEach(b => {
-                if (zone && b.dataset.color === zone.color) { b.style.opacity = '1'; b.style.transform = 'scale(1.05)'; b.style.border = '3px solid #1e293b'; } 
-                else { b.style.opacity = '0.4'; b.style.transform = 'scale(1)'; b.style.border = 'none'; }
-            });
-            const summary = document.getElementById('summary-badge');
-            if (summary && zone) { summary.innerText = zone.color.toUpperCase() + ' | ~' + zone.avgKg + 'kg | ' + zone.ageStr; summary.classList.remove('hidden'); }
-        }
-
-        function sync(src) {
-            let age = parseInt(sAge.value), kg = parseInt(sKg.value), cm = parseInt(sCm.value);
-            if (src === 'age') { if (age === 0) kg = 6; else kg = 2 * (age + 4); cm = Math.round((age * 6) + 77); sKg.value = kg; sCm.value = cm; } 
-            else if (src === 'kg') { if (kg < 10) age = 0; else age = Math.max(1, Math.round((kg / 2) - 4)); cm = Math.round((age * 6) + 77); sAge.value = age; sCm.value = cm; } 
-            if (valAge) valAge.innerText = age === 0 ? 'Säugling' : age + ' J.';
-            if (valKg) valKg.innerText = kg + ' kg';
-            if (valCm) valCm.innerText = cm + ' cm';
-            updateColorHighlight(kg);
-        }
-
-        if (sAge) sAge.addEventListener('input', () => sync('age'));
-        if (sKg) sKg.addEventListener('input', () => sync('kg'));
-        if (sCm) sCm.addEventListener('input', () => sync('cm'));
-
-        document.querySelectorAll('.broselow-btn').forEach(btn => { 
-            btn.addEventListener('click', (e) => { Utils.vibrate(20); const color = e.currentTarget.dataset.color; const zone = broselowData ? broselowData.find(z => z.color === color) : null; if (zone && sKg) { sKg.value = zone.avgKg; sync('kg'); } }); 
-        });
-
-        addClick('btn-pediatric-edit', (e) => { e.stopPropagation(); Utils.vibrate(30); document.getElementById('patient-setup-modal')?.classList.replace('hidden', 'flex'); });
-        addClick('btn-close-pedi-modal', (e) => { e.stopPropagation(); Utils.vibrate(30); document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden'); });
-
-        addClick('btn-start-adult', () => {
-            if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = false; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; 
+    <!-- PÄDIATRIE MODAL -->
+    <div id="patient-setup-modal" class="hidden fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-3">
+        <div class="bg-white rounded-[2rem] p-4 w-full max-w-md border border-slate-100 shadow-2xl flex flex-col relative max-h-[98vh] overflow-y-auto custom-scrollbar">
+            <button id="btn-close-pedi-modal" class="absolute top-3 right-3 w-8 h-8 bg-slate-100 rounded-full text-slate-500 flex items-center justify-center active:scale-90 z-20 transition-all"><i class="fa-solid fa-xmark"></i></button>
             
-            // 🌟 DEFER: Kompression und Timer laufen noch NICHT!
-            AppState.isRunning = false; AppState.isCompressing = false;
-            
-            if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            addLogEntry("Patient: Erwachsener"); navHelper('OB_COMPRESSIONS', 'view-ob-2', 'large'); Utils.saveSession();
-        });
+            <div class="text-center mb-3 mt-0">
+                <h3 class="text-lg font-black text-slate-800 uppercase tracking-widest">Pädiatrie Setup</h3>
+            </div>
 
-        addClick('btn-start-child', (e) => { e.stopPropagation(); Utils.vibrate(40); if (sKg && parseInt(sKg.value) === 4) sync('kg'); const m = document.getElementById('patient-setup-modal'); if(m) m.classList.replace('hidden', 'flex'); });
+            <div class="mb-3">
+                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block text-center mb-1.5">Maßband-Farbe (Schnellwahl)</span>
+                <div class="grid grid-cols-3 gap-1.5" id="color-grid">
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="grau" style="background-color: #9ca3af; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">GRAU</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">4 kg &bull; 55 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="rosa" style="background-color: #f472b6; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">ROSA</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">6.5 kg &bull; 65 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="rot" style="background-color: #ef4444; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">ROT</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">8.5 kg &bull; 70 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="lila" style="background-color: #a855f7; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">LILA</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">10.5 kg &bull; 80 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="gelb" style="background-color: #eab308; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">GELB</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">13 kg &bull; 90 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all border border-slate-200" data-color="weiss" style="background-color: #ffffff; color: #334155;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none">WEISS</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide">16.5 kg &bull; 100 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="blau" style="background-color: #3b82f6; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">BLAU</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">21 kg &bull; 110 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="orange" style="background-color: #f97316; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">ORANGE</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">26.5 kg &bull; 120 cm</span>
+                    </button>
+                    <button class="broselow-btn flex flex-col items-center justify-center py-2 rounded-xl shadow-sm transition-all" data-color="gruen" style="background-color: #22c55e; color: white;">
+                        <span class="text-[13px] font-black tracking-wider pointer-events-none drop-shadow-md">GRÜN</span><span class="pointer-events-none text-[9px] font-extrabold mt-0.5 tracking-wide drop-shadow-md">33 kg &bull; 135 cm</span>
+                    </button>
+                </div>
+            </div>
 
-        addClick('btn-start-pediatric', () => {
-            if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = parseFloat(sKg.value); AppState.cprMode = 'continuous'; AppState.compressionCount = 0; 
-            
-            // 🌟 DEFER: Kompression und Timer laufen noch NICHT!
-            AppState.isRunning = false; AppState.isCompressing = false;
-            
-            document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden');
-            if(UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            addLogEntry(`Patient: Kind (${AppState.patientWeight}kg)`); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); Utils.saveSession();
-        });
+            <div class="flex flex-col mb-3 px-3 py-1 bg-white rounded-[1.5rem] shadow-[0_4px_20px_rgb(0,0,0,0.04)] border border-slate-100">
+                <div class="flex flex-col gap-1 py-2 border-b border-dashed border-slate-100">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Alter</span>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="slider-age" min="0" max="12" value="0" class="flex-1 h-2 bg-slate-200 rounded-full accent-[#E3000F] cursor-pointer appearance-none outline-none">
+                        <span id="val-age" class="bg-slate-50 text-slate-600 border border-slate-200 font-bold text-[9px] uppercase tracking-wider rounded-xl flex items-center justify-center w-[110px] h-9 shadow-sm shrink-0">Säugling (< 1 J.)</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 py-2 border-b border-dashed border-slate-100">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Gewicht</span>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="slider-kg" min="3" max="36" value="4" class="flex-1 h-2 bg-slate-200 rounded-full accent-[#E3000F] cursor-pointer appearance-none outline-none">
+                        <div class="relative bg-red-50 border border-red-100 rounded-xl shadow-sm w-[110px] h-9 flex items-center justify-center overflow-hidden shrink-0 group">
+                            <span id="val-kg" class="hidden">4 kg</span>
+                            <input type="number" id="exact-kg-input" class="w-full h-full bg-transparent text-center font-black text-[#E3000F] text-[14px] outline-none pr-6" value="4">
+                            <div class="absolute right-3 pointer-events-none flex flex-col items-center justify-center">
+                                <i class="fa-solid fa-sort text-[9px] text-red-300 mb-0.5"></i>
+                                <span class="text-[8px] font-black text-red-300 leading-none">kg</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-1 py-2">
+                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Größe</span>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="slider-cm" min="50" max="140" value="55" class="flex-1 h-2 bg-slate-200 rounded-full accent-[#E3000F] cursor-pointer appearance-none outline-none">
+                        <span id="val-cm" class="bg-blue-50 text-blue-600 border border-blue-100 font-black text-[12px] rounded-xl flex items-center justify-center w-[110px] h-9 shadow-sm shrink-0">55 cm</span>
+                    </div>
+                </div>
+            </div>
 
-        addClick('btn-start-pediatric-unknown', () => {
-            if (AudioEngine && typeof AudioEngine.init === 'function') AudioEngine.init();
-            Utils.vibrate(40); AppState.isPediatric = true; AppState.patientWeight = null; AppState.cprMode = 'continuous'; AppState.compressionCount = 0; 
-            
-            // 🌟 DEFER: Kompression und Timer laufen noch NICHT!
-            AppState.isRunning = false; AppState.isCompressing = false;
-            
-            document.getElementById('patient-setup-modal')?.classList.replace('flex', 'hidden');
-            if(UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); if(UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            addLogEntry("Patient: Kind (Gewicht unbekannt)"); navHelper('OB_INITIAL_BREATHS', 'view-initial-breaths', 'large'); Utils.saveSession();
-        });
-    }
+            <div id="summary-badge" class="hidden w-full bg-slate-50 border border-slate-200 text-slate-600 rounded-[1rem] px-3 py-2 text-center text-[10px] font-black tracking-widest shadow-inner mb-3"></div>
 
-    function initCPREvents() {
-        addClick('btn-breaths-done', (e) => { e.stopPropagation(); Utils.vibrate(40); addLogEntry("5 initiale Beatmungen durchgeführt"); navHelper('OB_COMPRESSIONS', 'view-ob-2', 'large'); });
-        addClick('btn-breaths-skipped', (e) => { e.stopPropagation(); Utils.vibrate([30, 50]); addLogEntry("5 initiale Beatmungen übersprungen"); navHelper('OB_COMPRESSIONS', 'view-ob-2', 'large'); });
+            <div class="flex gap-2 w-full mt-auto">
+                <button id="btn-start-pediatric-unknown" class="flex-1 bg-slate-50 border border-slate-200 text-slate-500 py-3 rounded-2xl font-bold uppercase text-[9px] shadow-sm active:bg-slate-100 transition-all tracking-widest flex flex-col items-center justify-center leading-tight">
+                    <i class="fa-solid fa-scale-unbalanced text-slate-400 text-sm mb-1"></i>
+                    Gewicht später
+                </button>
+                <button id="btn-start-pediatric" class="flex-[1.5] bg-[#E3000F] text-white py-3 rounded-2xl font-black uppercase text-[11px] shadow-[0_8px_20px_rgba(227,0,15,0.25)] active:scale-95 transition-transform tracking-widest flex justify-center items-center gap-2">
+                    Starten <i class="fa-solid fa-play text-[10px]"></i>
+                </button>
+            </div>
+        </div>
+    </div>
 
-        addClick('main-btn-area', (e) => {
-            if (e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
-            if (Date.now() - (Globals.lastMenuAction || 0) < 500) return;
-            
-            if (AppState.state === 'OB_COMPRESSIONS') { 
-                Utils.vibrate(50); 
-                AppState.cprMode = 'continuous'; // Sicherheits-Forcierung auf KONT nach Bestätigung
-                if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI();
-                
-                // 🌟 NEU: HIER startet der Countdown und die Kompressionsphase wirklich!
-                AppState.isRunning = true;
-                AppState.isCompressing = true;
-                startMainTimer();
-                requestWakeLock();
-                addLogEntry("Start REA (Kompression begonnen)");
-                updateCprUI();
-                
-                navHelper('OB_ANALYZE', 'view-ob-3', 'large'); 
-            } else if (AppState.state === 'OB_ANALYZE') { 
-                Utils.vibrate([30, 50]); 
-                // 🌟 CCF FIX: Die allererste Rhythmusanalyse nach dem Start pausiert nun auch die CPR!
-                AppState.isCompressing = false; 
-                addLogEntry("Rhythmusanalyse (Kompression PAUSE)"); 
-                updateCprUI(); // Stoppt Metronom
-                navHelper('DECISION', 'view-decision', 'large'); 
-            } else if (AppState.state === 'WAITING_CPR_RESUME') {
-                Utils.vibrate([40, 40]);
-                AppState.isCompressing = true;
-                addLogEntry("Kompression FORTGESETZT");
-                activateDashboard(true);
-                updateCprUI();
-                Utils.saveSession();
-            } else if (AppState.state === 'RUNNING') {
-                Utils.vibrate([30, 50]); 
-                AppState.isCompressing = false; 
-                addLogEntry("Rhythmusanalyse (Kompression PAUSE)"); 
-                navHelper('DECISION', 'view-decision', 'large'); 
-                if (CPR.CPRTimer && typeof CPR.CPRTimer.pause === 'function') CPR.CPRTimer.pause(); 
-                updateCprUI(); 
-            }
-        });
+    <!-- SETTINGS MODAL -->
+    <div id="settings-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-slate-50 w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-100">
+            <div class="bg-white px-5 py-4 border-b border-slate-100 flex justify-center items-center shrink-0">
+                <h3 class="font-black text-slate-800 uppercase tracking-widest text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-slate-400"></i> Einstellungen
+                </h3>
+            </div>
+            <div class="p-5 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+                <div>
+                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Metronom Geschwindigkeit</h4>
+                    <div class="flex bg-slate-200/50 p-1.5 rounded-xl gap-1">
+                        <button class="bpm-opt flex-1 py-3 text-slate-400 font-black text-lg rounded-lg transition-all border border-transparent bg-transparent" data-bpm="100">100</button>
+                        <button class="bpm-opt flex-1 py-3 text-slate-800 font-black text-lg rounded-lg shadow-sm bg-white transition-all border border-slate-100 transform scale-105" data-bpm="110">110</button>
+                        <button class="bpm-opt flex-1 py-3 text-slate-400 font-black text-lg rounded-lg transition-all border border-transparent bg-transparent" data-bpm="120">120</button>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">System Diagnose</h4>
+                    <div class="bg-red-50/40 border border-red-100 p-3 rounded-2xl flex flex-col gap-3">
+                        <button id="btn-show-syslog" class="w-full bg-white border border-slate-200 text-slate-700 py-3.5 rounded-xl font-bold text-sm shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                            <i class="fa-solid fa-bug text-slate-400"></i> Fehlerprotokoll einsehen
+                        </button>
+                        <button id="btn-hard-reset" class="w-full bg-[#E3000F] border border-red-600 text-white py-3.5 rounded-xl font-black text-sm shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Hard Reset (Daten löschen)
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2 text-center px-4">
+                    <span class="text-xs font-black text-slate-700 tracking-widest block mb-1">CPR ASSIST <span class="text-[#E3000F]">VFINAL</span></span>
+                    <p class="text-[10px] text-slate-500 leading-tight">Nutzung auf eigene Gefahr.</p>
+                </div>
+            </div>
+            <div class="p-4 bg-white border-t border-slate-200 shrink-0">
+                <button id="btn-close-settings-bottom" class="w-full bg-slate-100 text-slate-700 py-3.5 rounded-xl font-black uppercase text-xs shadow-sm border border-slate-200 active:scale-95 flex items-center justify-center gap-2 transition-all">
+                    <i class="fa-solid fa-arrow-rotate-left text-lg"></i> Zurück zum Einsatz
+                </button>
+            </div>
+        </div>
+    </div>
 
-        addClick('btn-decision-cancel', (e) => {
-            e.stopPropagation(); Utils.vibrate(30); markMenuAction();
-            if (AppState.previousState === 'RUNNING' || AppState.previousState === 'OB_ANALYZE') { 
-                // 🌟 BUGFIX: Abbruch im Schock-Menü -> Zurück zum vorherigen Zustand und Timer weiterlaufen lassen!
-                AppState.isCompressing = true; 
-                addLogEntry("Analyse abgebrochen - CPR FORTGESETZT"); 
-                if (AppState.previousState === 'RUNNING') {
-                    activateDashboard(false); // Timer NICHT resetten, sondern weiterlaufen lassen
-                } else {
-                    navHelper('OB_ANALYZE', 'view-ob-3', 'large');
-                }
-                updateCprUI(); 
-                Utils.saveSession();
-            } 
-            else { navHelper('OB_ANALYZE', 'view-ob-3', 'large'); }
-        });
-
-        addClick('btn-shockable', (e) => { 
-            e.stopPropagation(); Utils.vibrate(40); AppState.isShockable = true; 
-            if (UI && typeof UI.updateSmartMedsButton === 'function') UI.updateSmartMedsButton();
-            addLogEntry("Schockbar"); navHelper('JOULE', 'view-joule', 'large'); 
-        });
-        
-        addClick('btn-non-shockable', (e) => { 
-            e.stopPropagation(); Utils.vibrate(40); AppState.isShockable = false; 
-            if (UI && typeof UI.updateSmartMedsButton === 'function') UI.updateSmartMedsButton();
-            addLogEntry("Nicht Schockbar"); navHelper('WAITING_CPR_RESUME', 'view-cpr-resume', 'large'); 
-        });
-        
-        addClick('view-joule', (e) => {
-            const jBtn = e.target.closest('.btn-joule');
-            if (jBtn) { 
-                e.stopPropagation(); AppState.shockCount = (AppState.shockCount || 0) + 1; 
-                const sL = document.getElementById('rhythm-info-shocks'); if(sL) sL.innerText = AppState.shockCount;
-                const jL = document.getElementById('rhythm-info-joule'); if(jL) jL.innerText = jBtn.dataset.joule;
-                addLogEntry(`Schock abgegeben: ${jBtn.dataset.joule}`); navHelper('WAITING_CPR_RESUME', 'view-cpr-resume', 'large'); 
-            }
-            if (e.target.id === 'btn-joule-cancel') { 
-                e.stopPropagation(); markMenuAction(); 
-                // 🌟 BUGFIX: Auch wenn man im Joule-Menü abbricht, muss die CPR fortgesetzt werden!
-                if (AppState.previousState === 'RUNNING') {
-                    AppState.isCompressing = true;
-                    addLogEntry("Schock abgebrochen - CPR FORTGESETZT");
-                    activateDashboard(false);
-                    updateCprUI();
-                    Utils.saveSession();
-                } else {
-                    navHelper('DECISION', 'view-decision', 'large'); 
-                }
-            }
-        });
-
-        addClick('btn-confirm-resume', (e) => { 
-            e.stopPropagation(); Utils.vibrate([40, 40]); AppState.isCompressing = true; addLogEntry("Kompression FORTGESETZT"); activateDashboard(true); updateCprUI(); Utils.saveSession(); 
-        });
-
-        addClick('btn-cpr', (e) => { 
-            e.stopPropagation(); if (AppState.state === 'IDLE' || AppState.state === 'END') return; 
-            if (AppState.state === 'WAITING_CPR_RESUME') { Utils.vibrate([40, 40]); AppState.isCompressing = true; addLogEntry("Kompression FORTGESETZT"); activateDashboard(true); updateCprUI(); Utils.saveSession(); return; }
-            AppState.isCompressing = !AppState.isCompressing; AppState.compressionCount = 0; addLogEntry(AppState.isCompressing ? "Kompression FORTGESETZT" : "Kompression PAUSE"); updateCprUI(); Utils.saveSession(); 
-        });
-    }
-
-    function initMenuEvents() {
-        addClick('btn-adrenalin', (e) => {
-            e.stopPropagation(); 
-            markMenuAction(); 
-            try {
-                const st = window.CPR.AppState.state || ''; 
-                if (st === 'IDLE') return; 
-                if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(50); 
-                const btn = e.target.closest('#btn-adrenalin') || document.getElementById('btn-adrenalin');
-                const dose = btn ? btn.dataset.dose : '1 mg'; 
-                window.addLogEntry(`Adrenalin (${dose}) gegeben`); 
-                window.CPR.AppState.adrCount = (window.CPR.AppState.adrCount || 0) + 1; 
-                if (window.CPR.UI && typeof window.CPR.UI.updateAdrenalinBadge === 'function') {
-                    window.CPR.UI.updateAdrenalinBadge();
-                }
-                if (window.CPR.AdrTimer && typeof window.CPR.AdrTimer.start === 'function') {
-                    window.CPR.AdrTimer.start(); 
-                }
-                if (window.CPR.Utils && typeof window.CPR.Utils.saveSession === 'function') {
-                    window.CPR.Utils.saveSession();
-                }
-            } catch(err) {
-                console.error("[CPR] Adrenalin Button Fehler:", err);
-            }
-        });
-
-        addClick('btn-meds-menu', (e) => {
-            e.stopPropagation(); markMenuAction();
-            const btn = e.currentTarget;
-            if (btn.dataset.smartMode === "amio") {
-                Utils.vibrate(50);
-                const doseStr = btn.dataset.amioDose || "Amiodaron";
-                AppState.amioCount = (AppState.amioCount || 0) + 1;
-                addLogEntry(`Amiodaron ${doseStr} gegeben`);
-                if (UI && typeof UI.updateSmartMedsButton === 'function') UI.updateSmartMedsButton();
-                Utils.saveSession();
-            } else {
-                navHelper('MEDS_MENU', 'view-meds-menu', 'large');
-            }
-        });
-
-        addClick('view-meds-menu', (e) => {
-            const isCancel = e.target.closest('#btn-meds-cancel'); 
-            const isOpt = e.target.closest('.btn-amio-opt') || e.target.closest('.btn-sonstige-opt');
-            
-            if (isCancel || isOpt) {
-                e.stopPropagation(); Utils.vibrate(30); markMenuAction();
-                if (isOpt) { 
-                    const logText = isOpt.dataset.log || isOpt.innerText.replace('\n', ' ').trim(); 
-                    addLogEntry(`${logText} gegeben`); 
-                    if (logText.includes('Amiodaron') || logText.includes('Amio')) {
-                        AppState.amioCount = (AppState.amioCount || 0) + 1;
-                        if (UI && typeof UI.updateSmartMedsButton === 'function') UI.updateSmartMedsButton();
-                    }
-                }
-                navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
-            }
-        });
-
-        addClick('btn-airway', (e) => { e.stopPropagation(); navHelper('AIRWAY_MENU', 'view-airway', 'large'); });
-        
-        // 🌟 DIE NEUE, INTEGRIERTE ATEMWEGS-WEICHE 🌟
-        addClick('view-airway', (e) => {
-            const isCancel = e.target.closest('#btn-airway-cancel'); 
-            const isRemove = e.target.closest('#btn-airway-remove'); 
-            const isEdit = e.target.closest('#btn-airway-edit-doc'); 
-            const isOpt = e.target.closest('.btn-airway-opt');
-            
-            if (isOpt) {
-                e.stopPropagation(); 
-                Globals.tempAirwayType = isOpt.dataset.short; 
-                
-                if (Globals.tempAirwayType === 'Beutel-Maske') {
-                    // ---> PFAD A: BEUTEL-MASKE (Skip Doku, bleibe im CPR-Zyklus 30:2/15:2)
-                    if (window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(30);
-                    markMenuAction();
-                    addLogEntry("Atemweg: Beutel-Maske"); 
-                    
-                    const awLabel = document.getElementById('airway-label'); 
-                    if (awLabel) awLabel.innerText = "Beutel-Maske";
-                    
-                    document.getElementById('btn-airway-remove')?.classList.remove('hidden'); 
-                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); // Kein Stift bei BVM
-                    
-                    AppState.airwayEstablished = true; 
-                    AppState.compressionCount = 0; // Kompressionen resetten, damit Modus frisch anfängt
-                    AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
-                    addLogEntry(`Modus: ${AppState.cprMode} (Beutel-Maske)`); 
-                    
-                    if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); 
-                    
-                    navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
-                    
-                    // CPR Timer weiterlaufen lassen falls aktiv
-                    if (AppState.state === 'RUNNING' && CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') {
-                        CPR.CPRTimer.start(false); 
-                    }
-                    updateCprUI();
-                    Utils.saveSession();
-
-                } else {
-                    // ---> PFAD B: INVASIVER ATEMWEG (ETI, SGA etc. -> Öffne Doku-Menü)
-                    const docAwType = document.getElementById('doc-airway-type'); 
-                    if (docAwType) docAwType.innerText = Globals.tempAirwayType;
-                    if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
-                }
-
-            } else if (isCancel || isRemove) {
-                e.stopPropagation(); Utils.vibrate(30); markMenuAction(); 
-                if (isRemove) {
-                    addLogEntry("Atemweg entfernt"); 
-                    const awLabel = document.getElementById('airway-label'); 
-                    if (awLabel) awLabel.innerText = 'Atemweg';
-                    
-                    AppState.airwayEstablished = false; 
-                    AppState.compressionCount = 0;
-                    
-                    // Fällt bei Entfernung automatisch auf KONT zurück, falls es BVM war (wie beim Onboarding)
-                    if (AppState.cprMode === 'continuous') { 
-                        AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
-                        addLogEntry(`Modus: ${AppState.cprMode} (Auto-Switch)`); 
-                        if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); 
-                    }
-                    
-                    document.getElementById('btn-airway-remove')?.classList.add('hidden'); 
-                    document.getElementById('btn-airway-edit-doc')?.classList.add('hidden'); 
-                    updateCprUI();
-                }
-                navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
-            
-            } else if (isEdit) {
-                e.stopPropagation(); Utils.vibrate(30); 
-                const awLab = document.getElementById('airway-label'); 
-                Globals.tempAirwayType = awLab ? awLab.innerText : 'Atemweg';
-                const docAwType = document.getElementById('doc-airway-type'); 
-                if (docAwType) docAwType.innerText = Globals.tempAirwayType;
-                if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway-doc');
-            }
-        });
-        
-        addClick('btn-airway-doc-cancel', (e) => { e.stopPropagation(); Utils.vibrate(30); if (UI && typeof UI.switchView === 'function') UI.switchView('view-airway'); });
-        addClick('btn-airway-doc-save', (e) => {
-            e.stopPropagation(); Utils.vibrate(30); markMenuAction();
-            const aws = document.getElementById('aw-size'); const size = aws ? aws.value : '?'; const awd = document.getElementById('aw-depth'); const depth = awd ? awd.value : '?'; const awc = document.getElementById('aw-cuff'); const cuff = awc ? awc.value : '25';
-            let actionStr = `Atemweg: ${Globals.tempAirwayType} (Gr. ${size}`; if (Globals.tempAirwayType === 'ETI' || Globals.tempAirwayType === 'LTS') actionStr += `, ${depth}cm`; actionStr += `, Cuff ${cuff}mbar)`;
-            addLogEntry(actionStr); const awLabel = document.getElementById('airway-label'); if(awLabel) awLabel.innerText = Globals.tempAirwayType;
-            document.getElementById('btn-airway-remove')?.classList.remove('hidden'); document.getElementById('btn-airway-edit-doc')?.classList.remove('hidden');
-            AppState.airwayEstablished = true; AppState.compressionCount = 0;
-            if (AppState.cprMode !== 'continuous') { AppState.cprMode = 'continuous'; addLogEntry("Modus: continuous (Auto-Switch durch Atemweg)"); if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); }
-            navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
-            if (AppState.state === 'RUNNING' && CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') CPR.CPRTimer.start(true); updateCprUI();
-        });
-
-        addClick('btn-zugang-menu', (e) => { e.stopPropagation(); navHelper('ZUGANG_MENU', 'view-zugang', 'large'); });
-        addClick('btn-zugang-cancel', (e) => { e.stopPropagation(); markMenuAction(); navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large'); });
-        const zTyp = document.getElementById('zugang-typ');
-        if(zTyp) { zTyp.addEventListener('change', function(e) { const isIO = e.target.value === 'i.o.'; const groesse = document.getElementById('zugang-groesse'); const ort = document.getElementById('zugang-ort'); if (isIO) { if (groesse) groesse.value = AppState.isPediatric ? 'EZ-IO Pink' : 'EZ-IO Blau'; if (ort) ort.value = 'Tibia prox.'; } else { if (groesse) groesse.value = 'Grün (18G)'; if (ort) ort.value = 'Handrücken'; } }); }
-        addClick('btn-zugang-save', (e) => {
-            e.stopPropagation(); markMenuAction(); const typ = document.getElementById('zugang-typ')?.value || ''; const groesse = document.getElementById('zugang-groesse')?.value || ''; const ort = document.getElementById('zugang-ort')?.value || '';
-            addLogEntry(`Zugang: ${typ} ${groesse} (${ort})`); navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large');
-        });
-
-        addClick('btn-opt-abbruch', (e) => { e.stopPropagation(); Utils.vibrate(30); navHelper('ABBRUCH_MENU', 'view-abbruch-reason', 'large'); });
-        addClick('btn-abbruch-cancel', (e) => { e.stopPropagation(); Utils.vibrate(30); markMenuAction(); navHelper('ROSC_MENU', 'view-rosc-end', 'large'); });
-        addClick('btn-rosc-end', (e) => { e.stopPropagation(); navHelper('ROSC_MENU', 'view-rosc-end', 'large'); });
-        addClick('btn-rosc-cancel', (e) => { e.stopPropagation(); markMenuAction(); navHelper(AppState.previousState === 'RUNNING' ? 'RUNNING' : 'DECISION', AppState.previousState === 'RUNNING' ? 'view-timer' : 'view-decision', AppState.previousState === 'RUNNING' ? 'small' : 'large'); });
-        
-        addClick('btn-opt-rosc', (e) => {
-            e.stopPropagation(); markMenuAction(); 
-            if (window.addLogEntry) {
-                const m = Math.floor((window.CPR.AppState.totalSeconds || 0) / 60);
-                const s = (window.CPR.AppState.totalSeconds || 0) % 60;
-                window.addLogEntry(`ROSC eingetreten nach ${m} Min ${s} Sek`);
-            }
-            AppState.state = 'ROSC_ACTIVE'; Utils.saveSession(); AppState.isCompressing = false;
-            if (Globals.pauseInterval) { clearInterval(Globals.pauseInterval); Globals.pauseInterval = null; }
-            if (CPR.CPRTimer && typeof CPR.CPRTimer.pause === 'function') CPR.CPRTimer.pause(); 
-            document.getElementById('main-btn-area')?.classList.remove('timer-ended'); 
-            document.getElementById('cpr-interface')?.classList.add('hidden'); 
-            document.getElementById('rosc-interface')?.classList.remove('hidden'); 
-            
-            showTopStats(); // 🌟 FIX: Garantiert die Einblendung der Top-Stats
-            
-            document.getElementById('stat-ccf')?.classList.add('hidden'); 
-            document.getElementById('stat-rosc')?.classList.remove('hidden');
-            updatePediRoscVitals(); startRoscTimer();
-        });
-        
-        addClick('btn-rearrest', (e) => {
-            e.stopPropagation(); Utils.vibrate([50, 50, 50]); markMenuAction(); addLogEntry("RE-ARREST! CPR fortgesetzt.");
-            if (Globals.roscInterval) { clearInterval(Globals.roscInterval); Globals.roscInterval = null; }
-            document.getElementById('rosc-interface')?.classList.add('hidden'); 
-            document.getElementById('cpr-interface')?.classList.remove('hidden'); 
-            
-            showTopStats(); // 🌟 FIX: Garantiert die Einblendung der Top-Stats
-            
-            document.getElementById('stat-rosc')?.classList.add('hidden'); 
-            document.getElementById('stat-ccf')?.classList.remove('hidden');
-            activateDashboard(); updateCprUI();
-        });
-
-        addClick('btn-rosc-exit', (e) => { e.stopPropagation(); triggerDebrief('Einsatz offiziell beendet'); });
-        addClick('btn-reason-team', (e) => { e.stopPropagation(); triggerDebrief('Abbruch: Teamentscheidung'); });
-        addClick('btn-reason-family', (e) => { e.stopPropagation(); triggerDebrief('Abbruch: Angehörige'); });
-        addClick('btn-reason-doc', (e) => { e.stopPropagation(); triggerDebrief('Abbruch: Patientenverfügung'); });
-
-        addClick('btn-toggle-mode', (e) => {
-            e.stopPropagation(); Utils.vibrate(30); const st = AppState.state || 'IDLE'; if (st === 'IDLE' || st === 'END' || st === 'ROSC_ACTIVE') return;
-            if (AppState.cprMode === 'continuous') AppState.cprMode = AppState.isPediatric ? '15:2' : '30:2'; 
-            else if (AppState.cprMode === '30:2' || AppState.cprMode === '15:2') AppState.cprMode = 'continuous'; 
-            if(UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); addLogEntry(`Modus manuell gewechselt: ${AppState.cprMode}`); updateCprUI();
-        });
-    }
-
-    // 🌟 CLEANUP: App.js feuert nur noch Befehle. Die Tab-Klicks werden von log-timeline.js verwaltet!
-    function initProtocolEvents() {
-        addClick('btn-undo-log', (e) => { 
-            e.stopPropagation(); 
-            Utils.vibrate(20); 
-            if (AppState.protocolData && AppState.protocolData.length > 0) { 
-                AppState.protocolData.pop(); 
-                Utils.saveSession(); 
-                if (window.CPR.LogTimeline && typeof window.CPR.LogTimeline.forceRender === 'function') window.CPR.LogTimeline.forceRender();
-            } else { 
-                Utils.showDialog('alert', 'Info', 'Das Protokoll ist bereits leer.'); 
-            } 
-        });
-        addClick('btn-export-log', (e) => { e.stopPropagation(); document.getElementById('export-modal')?.classList.replace('hidden', 'flex'); });
-        addClick('btn-cancel-export', (e) => { e.stopPropagation(); document.getElementById('export-modal')?.classList.replace('flex', 'hidden'); });
-    }
-
-    function initPanelEvents() {
-        addClick('btn-toggle-protocol', (e) => { 
-            e.stopPropagation(); 
-            const panel = document.getElementById('protocol-panel');
-            if (panel) {
-                panel.classList.toggle('translate-y-full'); 
-                // Wenn das Panel hochfährt, zwingen wir LogTimeline zum Zeichnen der aktuellen Daten!
-                if (!panel.classList.contains('translate-y-full')) {
-                    if (window.CPR.LogTimeline && typeof window.CPR.LogTimeline.forceRender === 'function') window.CPR.LogTimeline.forceRender();
-                }
-            }
-        });
-        addClick('btn-close-log', (e) => { e.stopPropagation(); document.getElementById('protocol-panel')?.classList.add('translate-y-full'); });
-        
-        addClick('btn-toggle-hits', (e) => { e.stopPropagation(); document.getElementById('hits-panel')?.classList.toggle('translate-y-full'); });
-        addClick('btn-close-hits', (e) => { e.stopPropagation(); document.getElementById('hits-panel')?.classList.add('translate-y-full'); });
-
-        // Tab-Switcher für das HITS-Menü bleibt unangetastet
-        addClick('btn-tab-hits', (e) => { e.stopPropagation(); e.target.classList.replace('text-slate-500', 'text-slate-800'); e.target.classList.add('bg-white', 'shadow-sm'); const tAna = document.getElementById('btn-tab-anamnese'); if(tAna) { tAna.classList.replace('text-slate-800', 'text-slate-500'); tAna.classList.remove('bg-white', 'shadow-sm'); } const vHits = document.getElementById('view-hits'); if(vHits) vHits.classList.replace('hidden', 'flex'); const vAna = document.getElementById('view-anamnese'); if(vAna) vAna.classList.replace('flex', 'hidden'); });
-        addClick('btn-tab-anamnese', (e) => { e.stopPropagation(); e.target.classList.replace('text-slate-500', 'text-slate-800'); e.target.classList.add('bg-white', 'shadow-sm'); const tHits = document.getElementById('btn-tab-hits'); if(tHits) { tHits.classList.replace('text-slate-800', 'text-slate-500'); tHits.classList.remove('bg-white', 'shadow-sm'); } const vAna = document.getElementById('view-anamnese'); if(vAna) vAna.classList.replace('hidden', 'flex'); const vHits = document.getElementById('view-hits'); if(vHits) vHits.classList.replace('flex', 'hidden'); });
-    }
-
-    function loadSession() {
-        const saved = Utils.safeGetItem('cpr_assist_session'); if (!saved) return false;
-        try {
-            const session = JSON.parse(saved); 
-            const passedSeconds = Math.floor((Date.now() - session.lastSavedTimestamp) / 1000);
-            if (passedSeconds > 7200) { Utils.sysLog("Session Timeout (> 2h). Starte neuen Einsatz."); Utils.safeRemoveItem('cpr_assist_session'); return false; }
-            
-            Object.assign(AppState, session); 
-            AppState.state = session.state || 'IDLE'; 
-            AppState.previousState = session.previousState || 'IDLE';
-            
-            if (!AppState.bpm) AppState.bpm = CONFIG?.BPM_DEFAULT || 110;
-            if (!AppState.anamneseData) AppState.anamneseData = { beobachtet: null, laienrea: null, brustschmerz: null, therapie: null, sampler: { s: '', a: '', m: '', p: '', l: '', e: '', r: '', 'plus-s': '' } };
-            if (!AppState.protocolData) AppState.protocolData = [];
-            
-            // 🌟 TIME TRAVEL FIX: Lückenloses Aufrechnen der Sekunden 🌟
-            if (AppState.isRunning !== false) { 
-                AppState.totalSeconds += passedSeconds; 
-                
-                if (AppState.state !== 'ROSC_ACTIVE') {
-                    AppState.arrestSeconds += passedSeconds; 
-                    
-                    // CCF-Fix: Wenn CPR lief, füllen wir die Lücke nahtlos auf!
-                    if (session.isCompressing) {
-                        AppState.compressingSeconds = (AppState.compressingSeconds || 0) + passedSeconds;
-                    } else if (session.isVentilationPhase) {
-                        AppState.ventilationSeconds = (AppState.ventilationSeconds || 0) + passedSeconds;
-                    }
-                }
-                
-                let currentCprSec = Number(AppState.cycleSeconds) || 0;
-                AppState.cycleSeconds = Math.min(120, currentCprSec + passedSeconds); 
-                let currentAdrSec = Number(AppState.adrSeconds) || 0;
-                AppState.adrSeconds = Math.min(240, currentAdrSec + passedSeconds); 
-            }
-            // 🌟 Der alte, harte Stopp (AppState.isCompressing = false) wurde HIER eliminiert!
-            
-            if (session.isSoundActive !== undefined) { 
-                const ion = document.getElementById('icon-sound-on'); if (ion) ion.classList.toggle('hidden', !AppState.isSoundActive); 
-                const ioff = document.getElementById('icon-sound-off'); if (ioff) ioff.classList.toggle('hidden', AppState.isSoundActive); 
-            }
-            
-            if (UI && typeof UI.updatePediatricUI === 'function') UI.updatePediatricUI(); 
-            if (UI && typeof UI.updateBpmUI === 'function') UI.updateBpmUI();
-            
-            const startEl = document.getElementById('start-time'); if (startEl) startEl.innerText = session.startTime || '--:--';
-            const awLabel = document.getElementById('airway-label'); if (awLabel) awLabel.innerText = session.airwayLabel || "Atemweg";
-            const zugLabel = document.getElementById('zugang-label'); if (zugLabel) zugLabel.innerText = session.zugangLabel || "Zugang";
-            
-            if (AppState.airwayEstablished) { 
-                document.getElementById('btn-airway-remove')?.classList.remove('hidden'); 
-                // Blende den Doku-Stift beim Neuladen NUR dann ein, wenn es NICHT Beutel-Maske war
-                if (session.airwayLabel !== 'Beutel-Maske') {
-                    document.getElementById('btn-airway-edit-doc')?.classList.remove('hidden'); 
-                }
-            }
-
-            if (UI && typeof UI.recalcMeds === 'function') UI.recalcMeds(); 
-            updateCCF(); 
-            if (UI && typeof UI.updateCprModeUI === 'function') UI.updateCprModeUI(); 
-            if (UI && typeof UI.updateAdrenalinBadge === 'function') UI.updateAdrenalinBadge();
-            if (UI && typeof UI.updateSmartMedsButton === 'function') UI.updateSmartMedsButton();
-
-            if (AppState.shockCount) {
-                const shockLabel = document.getElementById('rhythm-info-shocks');
-                if(shockLabel) shockLabel.innerText = AppState.shockCount;
-            }
-
-            if (AppState.state === 'END' || AppState.state === 'ROSC_ACTIVE') {
-                if (AppState.state === 'ROSC_ACTIVE') {
-                    document.getElementById('cpr-interface')?.classList.add('hidden'); 
-                    document.getElementById('rosc-interface')?.classList.remove('hidden'); 
-                    
-                    showTopStats(); // 🌟 FIX: Garantiert die Einblendung der Top-Stats
-                    
-                    document.getElementById('stat-ccf')?.classList.add('hidden'); 
-                    document.getElementById('stat-rosc')?.classList.remove('hidden');
-                    updatePediRoscVitals(); 
-                    if (AppState.isRunning !== false) { startMainTimer(); startRoscTimer(); } 
-                    requestWakeLock();
-                } else { 
-                    showTopStats(); // 🌟 FIX: Garantiert die Einblendung der Top-Stats
-                    
-                    navHelper(null, 'view-timer', 'small'); 
-                    if(AppState.isRunning === false) { document.getElementById('debriefing-modal')?.classList.replace('hidden', 'flex'); } 
-                }
-            } else if (AppState.state !== 'IDLE' && AppState.state.indexOf('OB_') !== 0) {
-                document.body.classList.add('dashboard-active');
-                
-                showTopStats(); // 🌟 FIX: Garantiert die Einblendung der Top-Stats
-                
-                document.getElementById('satellites')?.classList.remove('hidden');
-                ['btn-airway', 'btn-cpr'].forEach(id => { document.getElementById(id)?.classList.remove('opacity-0', 'pointer-events-none'); });
-                
-                // 🌟 FIX: CSS Layout Eclipse - Entfernt hartcodierte Opacity-0 Klassen von den Satelliten 🌟
-                document.querySelectorAll('.satellite-btn').forEach(b => b.classList.remove('opacity-0', 'pointer-events-none'));
-                
-                if (AppState.state === 'WAITING_CPR_RESUME') {
-                    navHelper(null, 'view-cpr-resume', 'large');
-                } else if (AppState.state !== 'RUNNING') { 
-                    navHelper(null, AppState.state === 'JOULE' ? 'view-joule' : 'view-decision', 'large'); 
-                } else { 
-                    navHelper(null, 'view-timer', 'small'); 
-                }
-
-                if (AppState.isRunning !== false) { 
-                    startMainTimer(); 
-                    if (AppState.state === 'RUNNING' && CPR.CPRTimer && typeof CPR.CPRTimer.start === 'function') {
-                        CPR.CPRTimer.start(); 
-                    } else if (CPR.CPRTimer && typeof CPR.CPRTimer.updateUI === 'function') {
-                        CPR.CPRTimer.updateUI();
-                    }
-                } else { 
-                    if(CPR.CPRTimer && typeof CPR.CPRTimer.updateUI === 'function') CPR.CPRTimer.updateUI(); 
-                    document.getElementById('debriefing-modal')?.classList.replace('hidden', 'flex'); 
-                }
-                updateCprUI(); requestWakeLock();
-                if (AppState.adrSeconds > 0 && CPR.AdrTimer && typeof CPR.AdrTimer.start === 'function') CPR.AdrTimer.start(true); 
-                
-                // 🌟 CLEANUP: Veraltete CSS Race-Condition Delays entfernt
-                if (window.CPR.MedsButton && typeof window.CPR.MedsButton.init === 'function') {
-                    window.CPR.MedsButton.init();
-                }
-            }
-
-            // Sicherstellen, dass das Protokoll nach dem Laden der Session sofort gerendert wird
-            if (window.CPR.LogTimeline && typeof window.CPR.LogTimeline.forceRender === 'function') window.CPR.LogTimeline.forceRender();
-            Utils.sysLog("Session loaded successfully."); 
-            return true;
-        } catch (e) { 
-            Utils.sysLog("Session load fail: " + e.message); 
-            Utils.safeRemoveItem('cpr_assist_session'); 
-            return false; 
-        }
-    }
-
-    try { initHeaderEvents(); } catch(e) { Utils.sysLog("Error Init Header: " + e.message); }
-    try { initPatientSetupEvents(); } catch(e) { Utils.sysLog("Error Init Patient: " + e.message); }
-    try { initCPREvents(); } catch(e) { Utils.sysLog("Error Init CPR: " + e.message); }
-    try { initMenuEvents(); } catch(e) { Utils.sysLog("Error Init Menus: " + e.message); }
-    try { initProtocolEvents(); } catch(e) { Utils.sysLog("Error Init Protocol: " + e.message); }
-    try { initPanelEvents(); } catch(e) { Utils.sysLog("Error Init Panels: " + e.message); }
+    <!-- EXPORT MODAL -->
+    <div id="export-modal" class="hidden fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm border-2 border-slate-200 shadow-2xl relative">
+            <h3 class="text-xl font-black text-slate-800 uppercase tracking-wide mb-4 text-center">Exportieren</h3>
+            <div class="mb-5"><h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 text-center">Protokoll-Umfang</h4><div class="flex bg-slate-100 p-1 rounded-xl"><button id="btn-export-short" class="flex-1 py-2 rounded-lg text-[10px] font-black uppercase bg-white text-slate-800 shadow-sm border border-slate-200 transition-all">Übergabe</button><button id="btn-export-long" class="flex-1 py-2 rounded-lg text-[10px] font-black uppercase text-slate-500 border border-transparent transition-all">Debriefing</button></div></div>
+            <div class="flex flex-col gap-3 mb-4"><button id="btn-run-txt-export" class="w-full bg-blue-50 text-blue-700 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-blue-200 active:scale-95 flex items-center justify-center gap-2"><i class="fa-solid fa-copy text-lg"></i> Text kopieren</button><button id="btn-run-pdf-export" class="w-full bg-[#E3000F] text-white py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm active:scale-95 flex items-center justify-center gap-2"><i class="fa-solid fa-file-pdf text-lg"></i> PDF speichern</button></div>
+            <button id="btn-cancel-export" class="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest p-3 active:scale-90 transition-all text-center border border-slate-200 rounded-xl">Abbrechen</button>
+        </div>
+    </div>
     
-    window.CPR.startMainTimer = startMainTimer;
-    window.CPR.updateCprUI = updateCprUI;
-    window.CPR.startRoscTimer = startRoscTimer;
+    <!-- STANDARD DIALOG MODAL -->
+    <div id="custom-dialog" class="hidden fixed inset-0 z-[250] bg-slate-900/90 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col text-center border-2 border-slate-200">
+            <div id="dialog-icon" class="text-4xl mb-3"></div><h3 id="dialog-title" class="text-lg font-black text-slate-800 uppercase tracking-wide mb-2"></h3>
+            <div id="dialog-message" class="text-sm font-bold text-slate-600 mb-6 max-h-[50vh] overflow-y-auto custom-scrollbar text-left p-2 bg-slate-50 rounded-lg border border-slate-100"></div>
+            <div class="flex gap-3 w-full"><button id="btn-dialog-cancel" class="hidden flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black uppercase text-xs active:scale-95">Abbrechen</button><button id="btn-dialog-confirm" class="flex-1 bg-[#E3000F] text-white py-3 rounded-xl font-black uppercase text-xs active:scale-95 shadow-md">OK</button></div>
+        </div>
+    </div>
 
-    if (UI && typeof UI.switchView === 'function') { UI.switchView('view-ob-1'); }
-    if (UI && typeof UI.setCenterSize === 'function') { UI.setCenterSize('large'); }
-
-    setTimeout(() => {
-        if (loadSession()) {
-            const st = AppState.state || 'IDLE'; 
-            // Nach dem Laden prüfen, ob wir im Timer sind -> Kreis klein machen!
-            if (st !== 'IDLE' && st.indexOf('OB_') !== 0) {
-                if (st === 'RUNNING') {
-                    if (UI && typeof UI.updateOrbitGeometry === 'function') UI.updateOrbitGeometry('small');
-                    navHelper(null, null, 'small');
-                } else {
-                    navHelper(null, null, 'large');
-                }
-            }
-        }
-    }, 100);
-});
-
-// =========================================================================
-// UI/UX DEBUG MODUS (Fadenkreuz & Injection-Logik) - 100% AUTARK
-// =========================================================================
-(function() {
-    let isDebugActive = false;
-
-    const canvas = document.createElement('canvas');
-    canvas.id = 'debug-canvas';
-    canvas.style.position = 'fixed';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.width = '100vw';
-    canvas.style.height = '100vh';
-    canvas.style.zIndex = '999999';
-    canvas.style.pointerEvents = 'none'; 
-    canvas.style.display = 'none'; 
-    document.body.appendChild(canvas);
-
-    function drawGrid() {
-        if (!isDebugActive) return;
-        
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const topStats = document.getElementById('top-stats-container');
-        const header = document.querySelector('header');
-        
-        // 🌟 DEBUG-GRID FIX: Der topStats Container reserviert immer Platz,
-        // daher ist seine Bottom-Kante jetzt der ewige Ankerpunkt der App!
-        let topY = header ? header.getBoundingClientRect().bottom : 0;
-        if (topStats) {
-            topY = topStats.getBoundingClientRect().bottom;
-        }
-
-        const bottomY = window.innerHeight;
-        const originY = topY + ((bottomY - topY) / 2); 
-        const originX = window.innerWidth / 2; 
-
-        ctx.strokeStyle = 'rgba(255, 0, 255, 0.6)';
-        ctx.fillStyle = 'rgba(255, 0, 255, 0.9)';
-        ctx.font = 'bold 10px monospace';
-        ctx.lineWidth = 1.5;
-
-        ctx.beginPath(); ctx.moveTo(0, originY); ctx.lineTo(canvas.width, originY); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(originX, 0); ctx.lineTo(originX, canvas.height); ctx.stroke();
-
-        const step = 10;
-        for(let x = originX; x < canvas.width; x += step) {
-            ctx.beginPath(); ctx.moveTo(x, originY - 4); ctx.lineTo(x, originY + 4); ctx.stroke();
-            if((x - originX) % 50 === 0 && x !== originX) ctx.fillText(`+${Math.round(x - originX)}`, x + 2, originY - 8);
-        }
-        for(let x = originX; x > 0; x -= step) {
-            ctx.beginPath(); ctx.moveTo(x, originY - 4); ctx.lineTo(x, originY + 4); ctx.stroke();
-            if((originX - x) % 50 === 0 && x !== originX) ctx.fillText(`-${Math.round(originX - x)}`, x - 25, originY - 8);
-        }
-        for(let y = originY; y < canvas.height; y += step) {
-            ctx.beginPath(); ctx.moveTo(originX - 4, y); ctx.lineTo(originX + 4, y); ctx.stroke();
-            if((y - originY) % 50 === 0 && y !== originY) ctx.fillText(`+${Math.round(y - originY)}`, originX + 8, y + 4);
-        }
-        for(let y = originY; y > 0; y -= step) {
-            ctx.beginPath(); ctx.moveTo(originX - 4, y); ctx.lineTo(originX + 4, y); ctx.stroke();
-            if((originY - y) % 50 === 0 && y !== originY) ctx.fillText(`-${Math.round(originY - y)}`, originX + 8, y + 4);
-        }
-        
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.fillText("0,0", originX + 8, originY - 8);
-    }
-
-    window.addEventListener('resize', drawGrid);
-    setInterval(drawGrid, 500);
-
-    setTimeout(() => {
-        const resetBtn = document.getElementById('btn-hard-reset');
-        if (resetBtn) {
-            const toggleBtn = document.createElement('button');
-            toggleBtn.id = 'btn-toggle-debug';
-            toggleBtn.className = 'w-full bg-slate-100 text-slate-700 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-slate-300 active:scale-95 flex items-center justify-center gap-2 mb-4 transition-all';
-            toggleBtn.innerHTML = '<i class="fa-solid fa-ruler-combined text-lg"></i> Layout Grid (An / Aus)';
+    <!-- DEBRIEFING MODAL -->
+    <div id="debriefing-modal" class="hidden fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-sm items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] p-6 w-full max-w-sm border border-slate-100 shadow-2xl relative flex flex-col items-center">
+            <div class="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-3 border border-emerald-100 shadow-sm"><i class="fa-solid fa-flag-checkered text-3xl text-emerald-500"></i></div>
+            <h2 class="text-2xl font-black text-slate-800 uppercase tracking-wide mb-1 text-center">Einsatz Beendet</h2>
+            <p class="text-slate-400 font-bold mb-5 text-center text-xs uppercase tracking-widest">Zeit für das Debriefing</p>
+            <div class="bg-slate-50 p-4 rounded-2xl w-full mb-6 border border-slate-100 shadow-inner">
+                <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Gesamtdauer</span><span class="text-sm font-black text-slate-800" id="debrief-duration">00:00</span></div>
+                <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">CCF (Kompression)</span><span class="text-sm font-black text-slate-800" id="debrief-ccf">0%</span></div>
+                <div class="flex justify-between items-center mb-3 border-b border-slate-200 pb-2"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Schocks abgegeben</span><span class="text-sm font-black text-amber-500" id="debrief-shocks">0</span></div>
+                <div class="flex justify-between items-center"><span class="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Adrenalin</span><span class="text-sm font-black text-[#E3000F]" id="debrief-adr">0</span></div>
+            </div>
+            <div class="w-full flex flex-col gap-3">
+                <button id="btn-debrief-export" class="w-full bg-blue-50 text-blue-700 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-blue-200 active:scale-95 flex items-center justify-center gap-2 transition-all"><i class="fa-solid fa-file-pdf text-lg"></i> Export / Protokoll</button>
+                <button id="btn-debrief-resume" class="w-full bg-white text-slate-600 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-sm border border-slate-200 active:scale-95 flex items-center justify-center gap-2 transition-all"><i class="fa-solid fa-arrow-rotate-left text-lg"></i> Zurück zum Einsatz</button>
+                <button id="btn-debrief-reset" class="w-full text-[10px] font-bold text-slate-400 uppercase tracking-widest p-3 active:scale-90 transition-all text-center border border-slate-200 rounded-xl bg-white shadow-sm mt-2">Neuer Einsatz (Daten löschen)</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 🌟 MODULARER APP-AUFBAU 🌟 -->
+    <script src="js/config.js?v=1001"></script>
+    <script src="js/utils.js?v=1001"></script>
+    <script src="js/audio.js?v=1001"></script>
+    <script src="js/export.js?v=1001"></script> 
+    <script src="js/settings.js?v=1001"></script>
+    <script src="js/checklists.js?v=1001"></script>
+    <script src="js/ui.js?v=1001"></script>
+    <script src="js/app.js?v=1001"></script>
+    <script src="js/airway-timer.js?v=1001"></script>
+    <script src="js/adr-timer.js?v=1001"></script> 
+    <script src="js/cpr-timer.js?v=1001"></script> 
+    <script src="js/help-overlay.js?v=1001"></script>
+    <script src="js/debriefing.js?v=1001"></script>
+    <script src="js/log-timeline.js?v=1001"></script>
+    
+                            
+    <!-- 🌟 NATIVE ROSC-MENU HOOKS (Verhindert Konflikte mit ui.js / app.js) 🌟 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnSampler = document.getElementById('btn-rosc-to-sampler');
+            const btnLog = document.getElementById('btn-rosc-to-log');
             
-            toggleBtn.addEventListener('click', (e) => {
-                e.preventDefault(); e.stopPropagation();
-                if(window.CPR && window.CPR.Utils && window.CPR.Utils.vibrate) window.CPR.Utils.vibrate(20);
-                
-                isDebugActive = !isDebugActive;
-                
-                if (isDebugActive) {
-                    canvas.style.display = 'block';
-                    document.body.classList.add('debug-mode'); 
-                    toggleBtn.classList.replace('bg-slate-100', 'bg-indigo-100');
-                    toggleBtn.classList.replace('text-slate-700', 'text-indigo-700');
-                    toggleBtn.classList.replace('border-slate-300', 'border-indigo-300');
-                    drawGrid();
-                } else {
-                    canvas.style.display = 'none';
-                    document.body.classList.remove('debug-mode'); 
-                    toggleBtn.classList.replace('bg-indigo-100', 'bg-slate-100');
-                    toggleBtn.classList.replace('text-indigo-700', 'text-slate-700');
-                    toggleBtn.classList.replace('border-indigo-300', 'border-slate-300');
-                }
-            });
+            const hitsPanel = document.getElementById('hits-panel');
+            const protocolPanel = document.getElementById('protocol-panel');
 
-            resetBtn.parentNode.insertBefore(toggleBtn, resetBtn);
-        }
-    }, 1500); 
-})();
+            if (btnSampler && hitsPanel) {
+                btnSampler.addEventListener('click', () => {
+                    if (window.CPR && window.CPR.Utils) window.CPR.Utils.vibrate(20);
+                    hitsPanel.classList.remove('translate-y-full');
+                });
+            }
+
+            if (btnLog && protocolPanel) {
+                btnLog.addEventListener('click', () => {
+                    if (window.CPR && window.CPR.Utils) window.CPR.Utils.vibrate(20);
+                    protocolPanel.classList.remove('translate-y-full');
+                    if (window.CPR.LogTimeline && typeof window.CPR.LogTimeline.forceRender === 'function') {
+                        window.CPR.LogTimeline.forceRender();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
