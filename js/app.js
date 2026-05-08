@@ -344,16 +344,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // =========================================================================
         // 🌟 NEU: SMART PROMPT LOGIK (INNER-HTML INJECTION FÜR GARANTIERTE SICHTBARKEIT)
+        // Die Klammern sind nun fehlerfrei balanciert.
         // =========================================================================
         const btnAw = document.getElementById('btn-airway');
 
         if (!AppState.airwayEstablished) {
+            
             if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
-                // UX-LÖSUNG: 45 Sekunden Schonfrist (Grace Period) für den Atemweg
                 const isGracePeriodOver = (AppState.totalSeconds > 45);
 
                 if (isGracePeriodOver) {
-                    // Nach 45s: Alarm "DOKU FEHLT" poppt auf
+                    // 🚨 Phase 2: Die Eskalation (Ab Sekunde 46 - "Visual Hammer")
                     if (btnAw && btnAw.dataset.isWarning !== "true") {
                         btnAw.dataset.isWarning = "true";
                         btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
@@ -372,7 +373,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         `;
                     }
                 } else {
-                    // In den ersten 45s: Standard-Design wiederherstellen / erzwingen
+                    // ⏱️ Phase 1: Die Schonfrist (Sekunde 0 bis 45 - Unauffällig)
                     if (btnAw && btnAw.dataset.isWarning === "true") {
                         delete btnAw.dataset.isWarning;
                         btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
@@ -391,7 +392,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
             } else {
-                // IDLE: Grauer Standard (Aber mit unserem schönen Icon)
+                // IDLE-ZUSTAND: Timer gestoppt, aber Atemweg noch nicht etabliert
                 if (btnAw && btnAw.dataset.isWarning) {
                     delete btnAw.dataset.isWarning;
                     btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
@@ -409,8 +410,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     `;
                 }
             }
+
         } else {
-            // ATEMWEG ETABLIERT: Setzt das normale Layout zurück (mit dem gespeicherten Atemweg-Namen)
+            // ✅ Phase 3: Die Erledigung (Atemweg wurde erfolgreich dokumentiert)
             if (btnAw && btnAw.dataset.isWarning) {
                 delete btnAw.dataset.isWarning;
                 btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
