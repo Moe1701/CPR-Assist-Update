@@ -3,12 +3,12 @@
  * - FEATURE: Natives "Beutel-Maske" Routing integriert.
  * - UX/LOGIC: BVM überspringt Doku-Menü, erzwingt 30:2/15:2 und blendet den Edit-Stift aus.
  * - PING-PONG: Das dynamische Zusammenspiel zwischen CPR und Beatmung ist aktiv!
- * - SMART PROMPT (VISUAL HAMMER): Atemwegs-Button pulsiert "Beatmung?" extrem auffällig über innerHTML-Injection!
- * - BUGFIX: Smart Prompt Logik entkoppelt! Wird jetzt sekündlich live überwacht, anstatt in UI-Events gefangen zu sein.
+ * - SMART PROMPT (3-STUFEN ESKALATION): 
+ * -> Warnung ab Sekunde 0 ("Doku Fehlt" in gelb).
+ * -> Extreme Eskalation ab Sekunde 60 ("BEATMUNG ETABLIEREN !!!" in rot, springend).
+ * - BUGFIX: Smart Prompt Logik entkoppelt! Wird jetzt sekündlich live überwacht.
  * - UI UPGRADE: Millimetergenaue Y-Positionen verhindern jedes Herausrutschen!
- * - LOGIC FIX: Timer schaltet nicht mehr automatisch um, sondern eskaliert!
  * - ARCHITECTURE: Satelliten werden beim Öffnen von Menüs global im CSS ausgeblendet!
- * - BULLETPROOF FIX: Top Stats werden über redundante DOM-Befehle garantiert eingeblendet.
  * - TIME TRAVEL FIX: CPR und CCF-Berechnung laufen während App-Backgrounding lückenlos weiter.
  */
 
@@ -177,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // =========================================================================
     // 🌟 NEU: AUTONOME POLLING-FUNKTION FÜR DEN ATEMWEGS-HAMMER 🌟
-    // Entkoppelt von updateCprUI(). Wird im Sekundentakt aufgerufen.
+    // Mit dem neuen 3-Stufen-Modell (Sofortige Warnung -> Extreme Eskalation)
     // =========================================================================
     function checkSmartAirwayPrompt() {
         const btnAw = document.getElementById('btn-airway');
@@ -186,18 +186,43 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!AppState.airwayEstablished) {
             
             if (AppState.isRunning !== false && AppState.state !== 'ROSC_ACTIVE' && AppState.state !== 'END') {
-                const isGracePeriodOver = (AppState.totalSeconds > 45);
+                const isEscalationPhase = (AppState.totalSeconds >= 60);
 
-                if (isGracePeriodOver) {
-                    // 🚨 Phase 2: Die Eskalation (Ab Sekunde 46 - "Visual Hammer")
-                    if (btnAw.dataset.isWarning !== "true") {
-                        btnAw.dataset.isWarning = "true";
-                        btnAw.classList.add('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
-                        btnAw.classList.remove('border-slate-100');
+                if (isEscalationPhase) {
+                    // 🚨 STUFE 2: Extreme Eskalation (Ab 60 Sekunden - Kein Pardon mehr!)
+                    if (btnAw.dataset.warningLevel !== "extreme") {
+                        btnAw.dataset.warningLevel = "extreme";
+                        
+                        // Alte Klassen aufräumen
+                        btnAw.classList.remove('border-slate-100', 'border-amber-400', 'bg-amber-50', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]');
+                        // Rote Eskalations-Klassen setzen
+                        btnAw.classList.add('border-red-500', 'bg-red-50', 'shadow-[0_0_30px_rgba(227,0,15,0.7)]', 'overflow-visible');
+                        
+                        btnAw.innerHTML = `
+                            <div class="absolute inset-0 bg-red-500/20 animate-ping rounded-full"></div>
+                            <div class="absolute -top-1 -right-1 bg-[#E3000F] text-white text-[10px] font-black w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white z-20 animate-bounce">!!!</div>
+                            <div class="flex flex-col items-center justify-center w-full h-full relative z-10">
+                                <i class="fa-solid fa-lungs text-[22px] mb-0.5 text-red-600"></i>
+                                <div class="flex flex-col items-center leading-none w-full px-0.5">
+                                    <span class="text-[9px] font-black text-red-700 tracking-tighter uppercase leading-tight">Beatmung</span>
+                                    <span class="text-[7px] font-black text-white bg-red-600 uppercase tracking-widest mt-0.5 px-1 py-0.5 rounded shadow-sm border border-red-700 text-center leading-tight">Etablieren!!!</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    // ⏱️ STUFE 1: Sofortige Warnung (Sekunde 0 bis 59 - Direkt beim CPR Start)
+                    if (btnAw.dataset.warningLevel !== "warn") {
+                        btnAw.dataset.warningLevel = "warn";
+                        
+                        // Alte Klassen aufräumen
+                        btnAw.classList.remove('border-slate-100', 'border-red-500', 'bg-red-50', 'shadow-[0_0_30px_rgba(227,0,15,0.7)]');
+                        // Gelbe Warn-Klassen setzen
+                        btnAw.classList.add('border-amber-400', 'bg-amber-50', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'overflow-visible');
                         
                         btnAw.innerHTML = `
                             <div class="absolute inset-0 bg-amber-400/20 animate-pulse rounded-full"></div>
-                            <div class="absolute -top-1 -right-1 bg-[#E3000F] text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-md border-2 border-white z-20">!</div>
+                            <div class="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-md border-2 border-white z-20">!</div>
                             <div class="flex flex-col items-center justify-center w-full h-full relative z-10">
                                 <i class="fa-solid fa-lungs text-[22px] mb-1 text-amber-500"></i>
                                 <div class="flex flex-col items-center leading-none w-full px-1">
@@ -207,30 +232,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         `;
                     }
-                } else {
-                    // ⏱️ Phase 1: Die Schonfrist (Sekunde 0 bis 45 - Unauffällig)
-                    if (btnAw.dataset.isWarning === "true") {
-                        delete btnAw.dataset.isWarning;
-                        btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50', 'overflow-visible');
-                        btnAw.classList.add('border-slate-100');
-                        
-                        btnAw.innerHTML = `
-                            <div id="aw-glow-bg" class="absolute inset-0 w-full h-full pointer-events-none rounded-full transition-all duration-500 opacity-0"></div>
-                            <div id="airway-countdown-badge" class="hidden absolute top-0 right-0 -mt-2 -mr-2 bg-slate-800 text-white text-[10px] font-black rounded-full w-6 h-6 items-center justify-center border-2 border-white shadow-sm z-20 transition-all duration-300 transform scale-110"></div>
-                            <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none relative z-10">
-                                <i id="aw-icon" class="fa-solid fa-lungs text-[26px] mb-1 text-slate-400 transition-colors duration-300"></i>
-                                <div class="flex flex-col items-center leading-none mt-0.5 max-w-[85px] px-1 overflow-hidden">
-                                    <span id="airway-label" class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter truncate w-full text-center transition-colors">Atemweg</span>
-                                </div>
-                            </div>
-                        `;
-                    }
                 }
             } else {
                 // IDLE-ZUSTAND: Timer gestoppt, aber Atemweg noch nicht etabliert
-                if (btnAw.dataset.isWarning) {
-                    delete btnAw.dataset.isWarning;
-                    btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+                if (btnAw.dataset.warningLevel) {
+                    delete btnAw.dataset.warningLevel;
+                    
+                    btnAw.classList.remove('border-amber-400', 'border-red-500', 'bg-amber-50', 'bg-red-50', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'shadow-[0_0_30px_rgba(227,0,15,0.7)]');
                     btnAw.classList.add('border-slate-100');
                     
                     btnAw.innerHTML = `
@@ -247,10 +255,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
         } else {
-            // ✅ Phase 3: Die Erledigung (Atemweg wurde erfolgreich dokumentiert)
-            if (btnAw.dataset.isWarning) {
-                delete btnAw.dataset.isWarning;
-                btnAw.classList.remove('border-amber-400', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'bg-amber-50');
+            // ✅ STUFE 3: Die Erledigung (Atemweg wurde erfolgreich dokumentiert)
+            if (btnAw.dataset.warningLevel) {
+                delete btnAw.dataset.warningLevel;
+                
+                btnAw.classList.remove('border-amber-400', 'border-red-500', 'bg-amber-50', 'bg-red-50', 'shadow-[0_0_20px_rgba(245,158,11,0.5)]', 'shadow-[0_0_30px_rgba(227,0,15,0.7)]');
                 btnAw.classList.add('border-slate-100');
                 
                 const currentLabel = Globals.tempAirwayType || "Atemweg";
@@ -298,7 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (mainTimerEl) mainTimerEl.innerText = Utils.formatTime(AppState.totalSeconds);
                     updateCCF(); 
                     
-                    // 🌟 LÖSUNG: Checkt nun zuverlässig in JEDER Sekunde, ob der 45s-Hammer auslösen muss!
+                    // 🌟 LÖSUNG: Checkt nun zuverlässig in JEDER Sekunde, in welcher der 3 Stufen wir sind!
                     checkSmartAirwayPrompt(); 
                     
                     Utils.saveSession();
