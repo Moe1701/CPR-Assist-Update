@@ -1,5 +1,5 @@
 /**
- * CPR Assist - Dynamisches Checklisten Modul (V1.2)
+ * CPR Assist - Dynamisches Checklisten Modul (V1.3 - Alter & Gewicht)
  * Baut HITS, das vollständige SAMPLER-UI (mit Toggles) und das ROSC-Bündel auf.
  */
 document.addEventListener('DOMContentLoaded', () => {
@@ -65,11 +65,25 @@ document.addEventListener('DOMContentLoaded', () => {
         hitsContainer.innerHTML = html;
     }
 
-    // B. SAMPLER & LEITFRAGEN rendern (Genau wie im Screenshot!)
+    // B. SAMPLER & LEITFRAGEN rendern
     const anamneseContainer = document.getElementById('view-anamnese');
     if (anamneseContainer) {
         let html = `<div class="flex flex-col w-full">`;
         
+        // --- NEU: Alter & Gewicht ---
+        html += `
+            <div class="grid grid-cols-2 gap-3 mb-4 pb-4 border-b border-slate-200">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1 pl-1">Alter (Jahre)</label>
+                    <input type="number" id="dyn-ana-alter" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800 focus:outline-none focus:border-indigo-400 shadow-sm transition-colors" placeholder="z.B. 45">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1 pl-1">Gewicht (kg)</label>
+                    <input type="number" id="dyn-ana-gewicht" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-800 focus:outline-none focus:border-indigo-400 shadow-sm transition-colors" placeholder="z.B. 80">
+                </div>
+            </div>
+        `;
+
         // --- Leitfragen ---
         html += `<h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 pl-1">Leitfragen</h4>`;
         html += `<div class="grid grid-cols-2 gap-y-4 gap-x-3 mb-6">`;
@@ -169,6 +183,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // --- ALTER & GEWICHT LIVE SPEICHERN ---
+    document.addEventListener('input', (e) => {
+        if (e.target.id === 'dyn-ana-alter' || e.target.id === 'dyn-ana-gewicht') {
+            if(window.CPR && window.CPR.AppState && window.CPR.AppState.anamneseData) {
+                if (e.target.id === 'dyn-ana-alter') window.CPR.AppState.anamneseData.alter = e.target.value;
+                if (e.target.id === 'dyn-ana-gewicht') window.CPR.AppState.anamneseData.gewicht = e.target.value;
+                if(window.CPR.Utils && window.CPR.Utils.saveSession) window.CPR.Utils.saveSession();
+            }
+        }
+    });
+
     // --- LEITFRAGEN TOGGLE LOGIK ---
     document.querySelectorAll('.dyn-ana-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -218,6 +243,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const data = window.CPR?.AppState?.anamneseData;
         if (data) {
+            if (data.alter) parts.push("Alter: " + data.alter + " J.");
+            if (data.gewicht) parts.push("Gewicht: " + data.gewicht + " kg");
             if (data.beobachtet) parts.push("Beobachtet: " + data.beobachtet);
             if (data.laienrea) parts.push("Laien-REA: " + data.laienrea);
             if (data.brustschmerz) parts.push("Brustschmerz: " + data.brustschmerz);
@@ -247,6 +274,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function restoreDynAnamnese() {
         if (!window.CPR || !window.CPR.AppState || !window.CPR.AppState.anamneseData) return;
         const data = window.CPR.AppState.anamneseData;
+
+        // Alter & Gewicht wiederherstellen
+        const alterInput = document.getElementById('dyn-ana-alter');
+        if (alterInput && data.alter) alterInput.value = data.alter;
+        
+        const gewichtInput = document.getElementById('dyn-ana-gewicht');
+        if (gewichtInput && data.gewicht) gewichtInput.value = data.gewicht;
 
         // Toggles wiederherstellen
         ['beobachtet', 'laienrea', 'brustschmerz', 'therapie'].forEach(cat => {
@@ -279,5 +313,3 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-tab-anamnese')?.addEventListener('click', restoreDynAnamnese);
 
 });
-
-
