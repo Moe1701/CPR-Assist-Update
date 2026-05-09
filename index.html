@@ -58,13 +58,20 @@
     <!-- 🌟 LAYOUT ANCHOR: Verankert die Top-Stats UND den Disclaimer fix oben 🌟 -->
     <div class="relative w-full shrink-0 z-[60]">
         
-        <!-- DISCLAIMER -->
+        <!-- ========================================== -->
+        <!-- NEUER RECHTSSICHERER DISCLAIMER            -->
+        <!-- ========================================== -->
         <div class="absolute top-4 left-0 right-0 w-full px-4 z-[65] pointer-events-none">
             <div id="medical-disclaimer" class="w-full max-w-sm mx-auto bg-red-50/95 backdrop-blur-sm border-2 border-red-500 rounded-2xl p-3 shadow-sm text-center pointer-events-auto">
-                <h2 class="text-red-700 font-black uppercase tracking-widest text-xs mb-1"><i class="fa-solid fa-triangle-exclamation text-red-600 mr-1.5"></i>Wichtiger Hinweis</h2>
-                <p class="text-red-800 text-[10px] font-bold leading-tight">Assistenz- & Trainingswerkzeug für med. Fachpersonal. Ersetzt keine ärztliche Entscheidung. Alle Dosierungen sind eigenverantwortlich zu prüfen. Nutzung auf eigene Gefahr.</p>
+                <h2 class="text-red-700 font-black uppercase tracking-widest text-xs mb-1">
+                    <i class="fa-solid fa-triangle-exclamation text-red-600 mr-1.5"></i>Nur für Training
+                </h2>
+                <p class="text-red-800 text-[10px] font-bold leading-tight">
+                    Diese App dient ausschließlich der Überwachung von Trainingsszenarien. Sie ist für den klinischen Live-Einsatz nicht validiert oder zugelassen. Alle Dosierungen sind eigenverantwortlich zu prüfen. Nutzung auf eigene Gefahr.
+                </p>
             </div>
         </div>
+        <!-- ========================================== -->
 
         <!-- TOP STATS -->
         <div id="top-stats-container" class="opacity-0 pointer-events-none transition-opacity duration-300 w-full bg-slate-50 px-2 pt-2 pb-1 relative z-[40]">
