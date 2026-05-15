@@ -1,6 +1,6 @@
 {
-  "name": "CPR Assist Update",
-  "short_name": "CPR Assist Update",
+  "name": "CPR Assist by Moe",
+  "short_name": "CPR Assist by Moe",
   "description": "Professioneller Reanimations-Assistent und Protokoll-Tool",
   "start_url": ".",
   "display": "standalone",
